@@ -29,6 +29,10 @@ const editBanner = document.querySelector("#edit-banner");
 const editTitle = document.querySelector("#edit-title");
 const saveRitualButton = document.querySelector("#save-ritual-button");
 const showRitualFormButton = document.querySelector("#show-ritual-form-button");
+const plansTitle = document.querySelector("#plans-title");
+const plansNote = document.querySelector("#plans-note");
+const plansEmptyTitle = document.querySelector("#plans-empty-title");
+const plansEmptyNote = document.querySelector("#plans-empty-note");
 let ritualLibrarySortable = null;
 let draftItemSortable = null;
 let activeMenuRitualId = null;
@@ -57,6 +61,15 @@ function bindEvents() {
       saveState();
       renderToday();
       syncViewModeButtons();
+    });
+  });
+
+  document.querySelectorAll("[data-plans-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.plansView = button.dataset.plansView;
+      saveState();
+      renderPlans();
+      syncPlansViewButtons();
     });
   });
 
@@ -161,6 +174,7 @@ function bindEvents() {
 function renderApp() {
   document.querySelector("#today-screen").classList.toggle("is-hidden", state.screen !== "today");
   document.querySelector("#rituals-screen").classList.toggle("is-hidden", state.screen !== "rituals");
+  document.querySelector("#plans-screen").classList.toggle("is-hidden", state.screen !== "plans");
   document.querySelector("#settings-screen").classList.toggle("is-hidden", state.screen !== "settings");
 
   document.querySelectorAll("[data-screen]").forEach((button) => {
@@ -168,9 +182,11 @@ function renderApp() {
   });
 
   syncViewModeButtons();
+  syncPlansViewButtons();
   renderToday();
   renderDraftItems();
   renderLibrary();
+  renderPlans();
   syncEditState();
   initializeSortables();
 }
@@ -532,6 +548,27 @@ function syncViewModeButtons() {
   });
 }
 
+function syncPlansViewButtons() {
+  document.querySelectorAll("[data-plans-view]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.plansView === state.plansView);
+  });
+}
+
+function renderPlans() {
+  if (state.plansView === "this-week") {
+    plansTitle.textContent = "This Week";
+    plansNote.textContent = "This view will hold the smaller set of items you want in focus this week.";
+    plansEmptyTitle.textContent = "This Week is ready for planning";
+    plansEmptyNote.textContent = "Next we can add plan items, move them out of backlog, and check them off here.";
+    return;
+  }
+
+  plansTitle.textContent = "Backlog";
+  plansNote.textContent = "This is where loose ideas, errands, and non-recurring tasks will live.";
+  plansEmptyTitle.textContent = "Backlog is ready for planning";
+  plansEmptyNote.textContent = "Next we can add plan items, reorder them, and move them into This Week.";
+}
+
 function currentDateKey() {
   const today = new Date();
   const year = today.getFullYear();
@@ -562,7 +599,9 @@ function saveState() {
     rituals: state.rituals,
     completions: state.completions,
     todayView: state.todayView,
+    plansView: state.plansView,
     expandedRitualIds: state.expandedRitualIds,
+    isFormOpen: state.isFormOpen,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
 }
@@ -630,6 +669,7 @@ function defaultState() {
     screen: "today",
     isFormOpen: false,
     todayView: "checklist",
+    plansView: "backlog",
     rituals: [],
     completions: {},
     expandedRitualIds: {},

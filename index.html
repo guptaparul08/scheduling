@@ -9,25 +9,36 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="brand-block">
           <p class="eyebrow">Daily Rhythm</p>
-          <h1>Ritual Flow</h1>
+          <div class="brand-row">
+            <h1>Ritual Flow</h1>
+            <span class="version-badge">V1</span>
+          </div>
         </div>
-        <nav class="topbar-nav" aria-label="Main navigation">
-          <button class="nav-button is-active" data-screen="today" type="button">
-            Today
-          </button>
-          <button class="nav-button" data-screen="rituals" type="button">
-            Rituals
-          </button>
-          <button class="nav-button nav-icon-button" data-screen="settings" type="button" aria-label="Settings" title="Settings">
-            <span aria-hidden="true">&#9881;</span>
-          </button>
-        </nav>
+        <p class="panel-note topbar-note">Recurring rituals now, flexible plans next.</p>
       </header>
 
       <main class="layout">
-        <section class="panel panel-main" id="today-screen">
+        <aside class="panel panel-nav">
+          <nav class="sidebar-nav" aria-label="Main navigation">
+            <button class="nav-button is-active" data-screen="today" type="button">
+              Today
+            </button>
+            <button class="nav-button" data-screen="rituals" type="button">
+              Rituals
+            </button>
+            <button class="nav-button" data-screen="plans" type="button">
+              Plans
+            </button>
+            <button class="nav-button nav-icon-button" data-screen="settings" type="button" aria-label="Settings" title="Settings">
+              <span aria-hidden="true">&#9881;</span>
+              <span class="nav-label">Settings</span>
+            </button>
+          </nav>
+        </aside>
+
+        <section class="panel panel-content" id="today-screen">
           <div class="panel-header">
             <div>
               <p class="panel-label">Today</p>
@@ -47,7 +58,7 @@
           <div class="ritual-list" id="today-rituals"></div>
         </section>
 
-        <section class="panel panel-side is-hidden" id="rituals-screen">
+        <section class="panel panel-content is-hidden" id="rituals-screen">
           <div class="panel-header">
             <div>
               <p class="panel-label">Manage Rituals</p>
@@ -121,7 +132,40 @@
           </div>
         </section>
 
-        <section class="panel panel-side is-hidden" id="settings-screen">
+        <section class="panel panel-content is-hidden" id="plans-screen">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Plans</p>
+              <h2>Backlog and This Week</h2>
+              <p class="panel-note">
+                Keep ad-hoc planning separate from your recurring rituals.
+              </p>
+            </div>
+            <div class="segmented-control" role="group" aria-label="Plans view mode">
+              <button class="segment is-active" data-plans-view="backlog" type="button">
+                Backlog
+              </button>
+              <button class="segment" data-plans-view="this-week" type="button">
+                This Week
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-card" id="plans-screen-card">
+            <h3 id="plans-title">Backlog</h3>
+            <p class="panel-note" id="plans-note">
+              This is where loose ideas, errands, and non-recurring tasks will live.
+            </p>
+            <div class="empty-state">
+              <h3 id="plans-empty-title">Plans are the next build step</h3>
+              <p id="plans-empty-note">
+                The structure is ready. Next we can add plan items, reordering, and completion.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel-content is-hidden" id="settings-screen">
           <div class="panel-header">
             <div>
               <p class="panel-label">Settings</p>
