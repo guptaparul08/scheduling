@@ -314,12 +314,31 @@ h2 {
   align-items: center;
 }
 
+.item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .ghost-button,
 .text-button {
   border: none;
   background: transparent;
   color: var(--muted);
   padding: 0;
+}
+
+.ghost-button:disabled,
+.text-button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .text-button.is-danger {
