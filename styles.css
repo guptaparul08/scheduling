@@ -205,6 +205,10 @@ h2 {
   font-size: 0.95rem;
 }
 
+.ritual-days {
+  letter-spacing: 0.04em;
+}
+
 .ritual-actions,
 .library-actions,
 .form-actions {
@@ -363,6 +367,11 @@ h2 {
   padding: 0;
 }
 
+.library-actions .ghost-button,
+.library-actions .text-button {
+  padding: 6px 0;
+}
+
 .ghost-button:disabled,
 .text-button:disabled {
   opacity: 0.35;
@@ -467,5 +476,20 @@ h2 {
   .edit-banner {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .library-card-header {
+    flex-direction: column;
+  }
+
+  .library-actions {
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .library-actions .drag-handle {
+    margin-right: auto;
   }
 }

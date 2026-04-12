@@ -1,5 +1,6 @@
 const STORAGE_KEY = "ritual-flow-v1";
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const COMPACT_DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const RitualFlowCore = window.RitualFlowCore || {};
 const parseRitualCsv = RitualFlowCore.parseRitualCsv;
 const escapeCsv = RitualFlowCore.escapeCsv;
@@ -296,6 +297,7 @@ function renderLibrary() {
   }
 
   state.rituals.forEach((ritual) => {
+    const compactDays = ritual.days.map((day) => COMPACT_DAY_LABELS[day]).join(" ");
     const card = document.createElement("article");
     card.className = "library-card";
     card.dataset.ritualId = ritual.id;
@@ -306,7 +308,7 @@ function renderLibrary() {
           <p class="ritual-meta">
             ${escapeHtml(ritual.note || "No note")} · ${ritual.items.length} item${ritual.items.length === 1 ? "" : "s"}
           </p>
-          <p class="ritual-meta">${ritual.days.map((day) => DAY_LABELS[day]).join(", ") || "No days selected"}</p>
+          <p class="ritual-meta ritual-days">${compactDays || "No days selected"}</p>
           <p class="ritual-meta">${ritual.isActive ? "Active" : "Archived"}</p>
         </div>
         <div class="library-actions">
