@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ritual Flow</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Daily Rhythm</p>
+          <h1>Ritual Flow</h1>
+        </div>
+        <nav class="topbar-nav" aria-label="Main navigation">
+          <button class="nav-button is-active" data-screen="today" type="button">
+            Today
+          </button>
+          <button class="nav-button" data-screen="rituals" type="button">
+            Rituals
+          </button>
+          <button class="nav-button" data-screen="settings" type="button">
+            Settings
+          </button>
+        </nav>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel-main" id="today-screen">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Today</p>
+              <h2 id="today-date">Saturday, April 11</h2>
+              <p class="panel-note" id="today-summary">0 rituals scheduled</p>
+            </div>
+            <div class="segmented-control" role="group" aria-label="Today view mode">
+              <button class="segment is-active" data-view-mode="checklist" type="button">
+                Checklist
+              </button>
+              <button class="segment" data-view-mode="simple" type="button">
+                Simple
+              </button>
+            </div>
+          </div>
+
+          <div class="ritual-list" id="today-rituals"></div>
+        </section>
+
+        <section class="panel panel-side is-hidden" id="rituals-screen">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Manage Rituals</p>
+              <h2>Your recurring stacks</h2>
+              <p class="panel-note">
+                Create rituals, add checklist steps, and choose which days they appear.
+              </p>
+            </div>
+          </div>
+
+          <form class="ritual-form" id="ritual-form">
+            <input type="hidden" id="ritual-id" />
+
+            <label class="field">
+              <span>Ritual name</span>
+              <input id="ritual-name" name="name" type="text" placeholder="Wake-up ritual" required />
+            </label>
+
+            <label class="field">
+              <span>Short note</span>
+              <input
+                id="ritual-note"
+                name="note"
+                type="text"
+                placeholder="Morning, evening, skincare..."
+              />
+            </label>
+
+            <div class="field">
+              <span>Checklist items</span>
+              <div class="item-builder">
+                <input id="item-input" type="text" placeholder="Add a step" />
+                <button id="add-item-button" class="secondary-button" type="button">Add item</button>
+              </div>
+              <ul class="item-list" id="item-list"></ul>
+            </div>
+
+            <fieldset class="field">
+              <legend>Days</legend>
+              <div class="day-picker" id="day-picker"></div>
+            </fieldset>
+
+            <label class="inline-toggle">
+              <input id="ritual-active" type="checkbox" checked />
+              <span>Active</span>
+            </label>
+
+            <div class="form-actions">
+              <button class="primary-button" type="submit">Save ritual</button>
+              <button class="secondary-button is-hidden" id="cancel-edit" type="button">Cancel</button>
+            </div>
+          </form>
+
+          <div class="saved-rituals">
+            <h3>Saved rituals</h3>
+            <div id="ritual-library" class="library-list"></div>
+          </div>
+        </section>
+
+        <section class="panel panel-side is-hidden" id="settings-screen">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Settings</p>
+              <h2>Export</h2>
+              <p class="panel-note">
+                Download your ritual definitions as a CSV file.
+              </p>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <h3>Ritual CSV</h3>
+            <p class="panel-note">
+              Includes ritual name, note, active status, scheduled days, and checklist items.
+            </p>
+            <div class="form-actions">
+              <button class="primary-button" id="export-csv-button" type="button">
+                Export CSV
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="empty-state-template">
+      <div class="empty-state">
+        <h3>No rituals scheduled for today</h3>
+        <p>Create a ritual and assign it to this day to see it here.</p>
+        <button class="secondary-button" data-open-screen="rituals" type="button">Manage rituals</button>
+      </div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
