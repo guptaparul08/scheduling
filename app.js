@@ -30,6 +30,7 @@ const editTitle = document.querySelector("#edit-title");
 const saveRitualButton = document.querySelector("#save-ritual-button");
 let ritualLibrarySortable = null;
 let draftItemSortable = null;
+let activeMenuRitualId = null;
 
 initialize();
 
@@ -44,6 +45,7 @@ function bindEvents() {
   document.querySelectorAll("[data-screen]").forEach((button) => {
     button.addEventListener("click", () => {
       state.screen = button.dataset.screen;
+      saveState();
       renderApp();
     });
   });
@@ -76,7 +78,17 @@ function bindEvents() {
     const openScreen = event.target.closest("[data-open-screen]");
     if (openScreen) {
       state.screen = openScreen.dataset.openScreen;
+      saveState();
       renderApp();
+    }
+
+    const menuToggle = event.target.closest("[data-menu-toggle-id]");
+    if (menuToggle) {
+      const ritualId = menuToggle.dataset.menuToggleId;
+      activeMenuRitualId = activeMenuRitualId === ritualId ? null : ritualId;
+      renderLibrary();
+      initializeSortables();
+      return;
     }
 
     const removeDraftIndex = event.target.closest("[data-remove-draft-index]");
@@ -94,11 +106,13 @@ function bindEvents() {
 
     const archiveButton = event.target.closest("[data-archive-ritual-id]");
     if (archiveButton) {
+      activeMenuRitualId = null;
       toggleArchive(archiveButton.dataset.archiveRitualId);
     }
 
     const deleteButton = event.target.closest("[data-delete-ritual-id]");
     if (deleteButton) {
+      activeMenuRitualId = null;
       deleteRitual(deleteButton.dataset.deleteRitualId);
     }
 
@@ -124,6 +138,12 @@ function bindEvents() {
     if (dayPill) {
       const dayIndex = Number(dayPill.dataset.dayIndex);
       toggleDraftDay(dayIndex);
+    }
+
+    if (!event.target.closest(".menu-wrap") && activeMenuRitualId !== null) {
+      activeMenuRitualId = null;
+      renderLibrary();
+      initializeSortables();
     }
   });
 
@@ -314,10 +334,15 @@ function renderLibrary() {
         <div class="library-actions">
           <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">::</span>
           <button class="ghost-button" data-edit-ritual-id="${ritual.id}" type="button">Edit</button>
-          <button class="ghost-button" data-archive-ritual-id="${ritual.id}" type="button">
-            ${ritual.isActive ? "Archive" : "Activate"}
-          </button>
-          <button class="text-button is-danger" data-delete-ritual-id="${ritual.id}" type="button">Delete</button>
+          <div class="menu-wrap">
+            <button class="ghost-button more-button" data-menu-toggle-id="${ritual.id}" type="button">...</button>
+            <div class="overflow-menu ${activeMenuRitualId === ritual.id ? "" : "is-hidden"}">
+              <button class="ghost-button" data-archive-ritual-id="${ritual.id}" type="button">
+                ${ritual.isActive ? "Archive" : "Activate"}
+              </button>
+              <button class="text-button is-danger" data-delete-ritual-id="${ritual.id}" type="button">Delete</button>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -389,6 +414,7 @@ function populateForm(ritualId) {
   state.draftItems = ritual.items.map((item) => ({ ...item }));
   state.draftDays = [...ritual.days];
   state.screen = "rituals";
+  saveState();
   renderDayPicker();
   renderDraftItems();
   renderApp();
@@ -510,6 +536,7 @@ function loadState() {
 
 function saveState() {
   const persisted = {
+    screen: state.screen,
     rituals: state.rituals,
     completions: state.completions,
     todayView: state.todayView,

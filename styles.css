@@ -372,6 +372,30 @@ h2 {
   padding: 6px 0;
 }
 
+.menu-wrap {
+  position: relative;
+}
+
+.more-button {
+  min-width: 28px;
+  text-align: center;
+}
+
+.overflow-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 132px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+  z-index: 5;
+}
+
 .ghost-button:disabled,
 .text-button:disabled {
   opacity: 0.35;
@@ -491,5 +515,10 @@ h2 {
 
   .library-actions .drag-handle {
     margin-right: auto;
+  }
+
+  .overflow-menu {
+    right: 0;
+    left: auto;
   }
 }
