@@ -319,6 +319,26 @@ h2 {
   min-width: 0;
 }
 
+.drag-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.drag-handle {
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
 .inline-actions {
   display: flex;
   gap: 10px;
@@ -339,6 +359,14 @@ h2 {
 .text-button:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+.sortable-ghost {
+  opacity: 0.45;
+}
+
+.sortable-drag {
+  box-shadow: var(--shadow);
 }
 
 .text-button.is-danger {

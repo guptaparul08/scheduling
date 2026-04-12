@@ -23,6 +23,8 @@ const importStatus = document.querySelector("#import-status");
 const editBanner = document.querySelector("#edit-banner");
 const editTitle = document.querySelector("#edit-title");
 const saveRitualButton = document.querySelector("#save-ritual-button");
+let ritualLibrarySortable = null;
+let draftItemSortable = null;
 
 initialize();
 
@@ -80,22 +82,6 @@ function bindEvents() {
       syncEditState();
     }
 
-    const moveDraftUp = event.target.closest("[data-move-draft-up]");
-    if (moveDraftUp) {
-      const index = Number(moveDraftUp.dataset.moveDraftUp);
-      moveArrayItem(state.draftItems, index, index - 1);
-      renderDraftItems();
-      syncEditState();
-    }
-
-    const moveDraftDown = event.target.closest("[data-move-draft-down]");
-    if (moveDraftDown) {
-      const index = Number(moveDraftDown.dataset.moveDraftDown);
-      moveArrayItem(state.draftItems, index, index + 1);
-      renderDraftItems();
-      syncEditState();
-    }
-
     const editButton = event.target.closest("[data-edit-ritual-id]");
     if (editButton) {
       populateForm(editButton.dataset.editRitualId);
@@ -109,22 +95,6 @@ function bindEvents() {
     const deleteButton = event.target.closest("[data-delete-ritual-id]");
     if (deleteButton) {
       deleteRitual(deleteButton.dataset.deleteRitualId);
-    }
-
-    const moveRitualUp = event.target.closest("[data-move-ritual-up]");
-    if (moveRitualUp) {
-      const index = Number(moveRitualUp.dataset.moveRitualUp);
-      moveArrayItem(state.rituals, index, index - 1);
-      saveState();
-      renderApp();
-    }
-
-    const moveRitualDown = event.target.closest("[data-move-ritual-down]");
-    if (moveRitualDown) {
-      const index = Number(moveRitualDown.dataset.moveRitualDown);
-      moveArrayItem(state.rituals, index, index + 1);
-      saveState();
-      renderApp();
     }
 
     const toggleExpand = event.target.closest("[data-toggle-expand-id]");
@@ -175,6 +145,7 @@ function renderApp() {
   renderDraftItems();
   renderLibrary();
   syncEditState();
+  initializeSortables();
 }
 
 function renderToday() {
@@ -293,11 +264,13 @@ function renderDraftItems() {
 
   state.draftItems.forEach((item, index) => {
     const li = document.createElement("li");
+    li.dataset.itemId = item.id;
     li.innerHTML = `
-      <span class="item-text">${escapeHtml(item.label)}</span>
+      <div class="drag-row">
+        <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">::</span>
+        <span class="item-text">${escapeHtml(item.label)}</span>
+      </div>
       <div class="inline-actions">
-        <button class="ghost-button" data-move-draft-up="${index}" type="button" ${index === 0 ? "disabled" : ""}>Up</button>
-        <button class="ghost-button" data-move-draft-down="${index}" type="button" ${index === state.draftItems.length - 1 ? "disabled" : ""}>Down</button>
         <button class="text-button is-danger" data-remove-draft-index="${index}" type="button">Remove</button>
       </div>
     `;
@@ -318,9 +291,10 @@ function renderLibrary() {
     return;
   }
 
-  state.rituals.forEach((ritual, index) => {
+  state.rituals.forEach((ritual) => {
     const card = document.createElement("article");
     card.className = "library-card";
+    card.dataset.ritualId = ritual.id;
     card.innerHTML = `
       <div class="library-card-header">
         <div>
@@ -332,8 +306,7 @@ function renderLibrary() {
           <p class="ritual-meta">${ritual.isActive ? "Active" : "Archived"}</p>
         </div>
         <div class="library-actions">
-          <button class="ghost-button" data-move-ritual-up="${index}" type="button" ${index === 0 ? "disabled" : ""}>Up</button>
-          <button class="ghost-button" data-move-ritual-down="${index}" type="button" ${index === state.rituals.length - 1 ? "disabled" : ""}>Down</button>
+          <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">::</span>
           <button class="ghost-button" data-edit-ritual-id="${ritual.id}" type="button">Edit</button>
           <button class="ghost-button" data-archive-ritual-id="${ritual.id}" type="button">
             ${ritual.isActive ? "Archive" : "Activate"}
@@ -743,15 +716,6 @@ function dayToIndex(day) {
   return null;
 }
 
-function moveArrayItem(items, fromIndex, toIndex) {
-  if (toIndex < 0 || toIndex >= items.length || fromIndex === toIndex) {
-    return;
-  }
-
-  const movedItem = items.splice(fromIndex, 1)[0];
-  items.splice(toIndex, 0, movedItem);
-}
-
 function defaultState() {
   return {
     screen: "today",
@@ -771,6 +735,55 @@ function syncEditState() {
   ritualForm.classList.toggle("is-editing", isEditing);
   saveRitualButton.textContent = isEditing ? "Update ritual" : "Save ritual";
   editTitle.textContent = isEditing ? ritualNameInput.value || "Ritual" : "Ritual";
+}
+
+function initializeSortables() {
+  if (typeof Sortable === "undefined") {
+    return;
+  }
+
+  if (ritualLibrarySortable) {
+    ritualLibrarySortable.destroy();
+  }
+
+  if (draftItemSortable) {
+    draftItemSortable.destroy();
+  }
+
+  ritualLibrarySortable = new Sortable(ritualLibrary, {
+    animation: 180,
+    handle: ".drag-handle",
+    ghostClass: "sortable-ghost",
+    dragClass: "sortable-drag",
+    onEnd: function onRitualSort(event) {
+      if (event.oldIndex == null || event.newIndex == null || event.oldIndex === event.newIndex) {
+        return;
+      }
+
+      const movedRitual = state.rituals.splice(event.oldIndex, 1)[0];
+      state.rituals.splice(event.newIndex, 0, movedRitual);
+      saveState();
+      renderApp();
+    },
+  });
+
+  draftItemSortable = new Sortable(itemList, {
+    animation: 180,
+    handle: ".drag-handle",
+    ghostClass: "sortable-ghost",
+    dragClass: "sortable-drag",
+    onEnd: function onItemSort(event) {
+      if (event.oldIndex == null || event.newIndex == null || event.oldIndex === event.newIndex) {
+        return;
+      }
+
+      const movedItem = state.draftItems.splice(event.oldIndex, 1)[0];
+      state.draftItems.splice(event.newIndex, 0, movedItem);
+      renderDraftItems();
+      syncEditState();
+      initializeSortables();
+    },
+  });
 }
 
 function seedDemoRituals() {
