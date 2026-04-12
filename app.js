@@ -156,7 +156,9 @@ function renderToday() {
 
   ritualsForToday.forEach((ritual) => {
     const completedCount = ritual.items.filter((item) => isItemComplete(ritual.id, item.id)).length;
-    const isExpanded = state.expandedRitualIds[ritual.id] ?? true;
+    const isExpanded = Object.prototype.hasOwnProperty.call(state.expandedRitualIds, ritual.id)
+      ? state.expandedRitualIds[ritual.id]
+      : true;
 
     const card = document.createElement("article");
     card.className = "ritual-card";
@@ -304,7 +306,7 @@ function addDraftItem() {
     return;
   }
 
-  state.draftItems.push({ id: crypto.randomUUID(), label });
+  state.draftItems.push({ id: generateId(), label });
   itemInput.value = "";
   renderDraftItems();
 }
@@ -323,7 +325,7 @@ function handleSubmit(event) {
   event.preventDefault();
 
   const ritual = {
-    id: ritualIdInput.value || crypto.randomUUID(),
+    id: ritualIdInput.value || generateId(),
     name: ritualNameInput.value.trim(),
     note: ritualNoteInput.value.trim(),
     days: [...state.draftDays],
@@ -397,15 +399,22 @@ function deleteRitual(ritualId) {
 
   state.rituals = state.rituals.filter((entry) => entry.id !== ritualId);
   delete state.expandedRitualIds[ritualId];
-  delete state.completions[currentDateKey()]?.[ritualId];
+  const dailyCompletions = state.completions[currentDateKey()];
+  if (dailyCompletions && dailyCompletions[ritualId]) {
+    delete dailyCompletions[ritualId];
+  }
   saveState();
   renderApp();
 }
 
 function setItemCompletion(ritualId, itemId, completed) {
   const dateKey = currentDateKey();
-  state.completions[dateKey] ||= {};
-  state.completions[dateKey][ritualId] ||= {};
+  if (!state.completions[dateKey]) {
+    state.completions[dateKey] = {};
+  }
+  if (!state.completions[dateKey][ritualId]) {
+    state.completions[dateKey][ritualId] = {};
+  }
   state.completions[dateKey][ritualId][itemId] = completed;
   saveState();
   renderToday();
@@ -418,8 +427,12 @@ function markAllItems(ritualId, completed) {
   }
 
   const dateKey = currentDateKey();
-  state.completions[dateKey] ||= {};
-  state.completions[dateKey][ritualId] ||= {};
+  if (!state.completions[dateKey]) {
+    state.completions[dateKey] = {};
+  }
+  if (!state.completions[dateKey][ritualId]) {
+    state.completions[dateKey][ritualId] = {};
+  }
 
   ritual.items.forEach((item) => {
     state.completions[dateKey][ritualId][item.id] = completed;
@@ -430,7 +443,12 @@ function markAllItems(ritualId, completed) {
 }
 
 function isItemComplete(ritualId, itemId) {
-  return Boolean(state.completions[currentDateKey()]?.[ritualId]?.[itemId]);
+  const dailyCompletions = state.completions[currentDateKey()];
+  if (!dailyCompletions || !dailyCompletions[ritualId]) {
+    return false;
+  }
+
+  return Boolean(dailyCompletions[ritualId][itemId]);
 }
 
 function syncViewModeButtons() {
@@ -518,27 +536,27 @@ function seedDemoRituals() {
 
   state.rituals = [
     {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: "Wake-up ritual",
       note: "Morning",
       days: [1, 2, 3, 4, 5],
       isActive: true,
       items: [
-        { id: crypto.randomUUID(), label: "Drink water" },
-        { id: crypto.randomUUID(), label: "Open the curtains" },
-        { id: crypto.randomUUID(), label: "Five-minute stretch" },
+        { id: generateId(), label: "Drink water" },
+        { id: generateId(), label: "Open the curtains" },
+        { id: generateId(), label: "Five-minute stretch" },
       ],
     },
     {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: "Evening reset",
       note: "Night",
       days: [0, 1, 2, 3, 4, 5, 6],
       isActive: true,
       items: [
-        { id: crypto.randomUUID(), label: "Tidy desk" },
-        { id: crypto.randomUUID(), label: "Prep for tomorrow" },
-        { id: crypto.randomUUID(), label: "Skincare" },
+        { id: generateId(), label: "Tidy desk" },
+        { id: generateId(), label: "Prep for tomorrow" },
+        { id: generateId(), label: "Skincare" },
       ],
     },
   ];
@@ -547,14 +565,22 @@ function seedDemoRituals() {
 
 function escapeHtml(value) {
   return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function escapeCsv(value) {
-  const stringValue = String(value ?? "");
-  return `"${stringValue.replaceAll('"', '""')}"`;
+  const stringValue = String(value == null ? "" : value);
+  return `"${stringValue.replace(/"/g, '""')}"`;
+}
+
+function generateId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `ritual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
