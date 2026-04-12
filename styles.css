@@ -355,6 +355,68 @@ h2 {
   gap: 10px;
 }
 
+.plans-entry {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.plans-entry input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #fffdf9;
+}
+
+.plans-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.plan-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.plan-item-main {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-item-main input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.plan-text {
+  min-width: 0;
+}
+
+.plan-text.is-complete {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .item-list {
   list-style: none;
   padding: 0;
@@ -582,6 +644,10 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .plans-entry {
+    grid-template-columns: 1fr;
+  }
+
   .day-picker {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -591,19 +657,11 @@ h2 {
     align-items: stretch;
   }
 
-  .library-card-header {
-    flex-direction: column;
-  }
-
   .library-actions {
-    width: 100%;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .library-actions .drag-handle {
-    margin-right: auto;
+    width: auto;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 10px;
   }
 
   .overflow-menu {
@@ -614,5 +672,14 @@ h2 {
   .ritual-cta-row .primary-button {
     width: 100%;
     justify-content: center;
+  }
+
+  .plan-item {
+    flex-direction: column;
+  }
+
+  .plan-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

@@ -156,7 +156,12 @@
             <p class="panel-note" id="plans-note">
               This is where loose ideas, errands, and non-recurring tasks will live.
             </p>
-            <div class="empty-state">
+            <div class="plans-entry">
+              <input id="plan-input" type="text" placeholder="Add a plan item" />
+              <button class="primary-button" id="add-plan-button" type="button">Add Plan</button>
+            </div>
+            <div class="plans-list" id="plans-list"></div>
+            <div class="empty-state" id="plans-empty-state">
               <h3 id="plans-empty-title">Plans are the next build step</h3>
               <p id="plans-empty-note">
                 The structure is ready. Next we can add plan items, reordering, and completion.

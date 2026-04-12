@@ -33,8 +33,13 @@ const plansTitle = document.querySelector("#plans-title");
 const plansNote = document.querySelector("#plans-note");
 const plansEmptyTitle = document.querySelector("#plans-empty-title");
 const plansEmptyNote = document.querySelector("#plans-empty-note");
+const plansList = document.querySelector("#plans-list");
+const plansEmptyState = document.querySelector("#plans-empty-state");
+const planInput = document.querySelector("#plan-input");
+const addPlanButton = document.querySelector("#add-plan-button");
 let ritualLibrarySortable = null;
 let draftItemSortable = null;
+let plansSortable = null;
 let activeMenuRitualId = null;
 
 initialize();
@@ -88,6 +93,13 @@ function bindEvents() {
   exportCsvButton.addEventListener("click", exportRitualsCsv);
   importCsvInput.addEventListener("change", handleImportCsv);
   showRitualFormButton.addEventListener("click", openNewRitualForm);
+  addPlanButton.addEventListener("click", addPlanItem);
+  planInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addPlanItem();
+    }
+  });
 
   document.body.addEventListener("click", (event) => {
     const openScreen = event.target.closest("[data-open-screen]");
@@ -155,6 +167,16 @@ function bindEvents() {
       toggleDraftDay(dayIndex);
     }
 
+    const movePlanButton = event.target.closest("[data-move-plan-id]");
+    if (movePlanButton) {
+      movePlanToOtherBucket(movePlanButton.dataset.movePlanId);
+    }
+
+    const deletePlanButton = event.target.closest("[data-delete-plan-id]");
+    if (deletePlanButton) {
+      deletePlan(deletePlanButton.dataset.deletePlanId);
+    }
+
     if (!event.target.closest(".menu-wrap") && activeMenuRitualId !== null) {
       activeMenuRitualId = null;
       renderLibrary();
@@ -167,6 +189,10 @@ function bindEvents() {
       const ritualId = event.target.dataset.ritualId;
       const itemId = event.target.dataset.itemId;
       setItemCompletion(ritualId, itemId, event.target.checked);
+    }
+
+    if (event.target.matches("[data-plan-checkbox]")) {
+      togglePlanCompletion(event.target.dataset.planId, event.target.checked);
     }
   });
 }
@@ -555,18 +581,51 @@ function syncPlansViewButtons() {
 }
 
 function renderPlans() {
+  const bucketKey = state.plansView === "this-week" ? "thisWeek" : "backlog";
+  const bucketItems = state.plans[bucketKey];
+
   if (state.plansView === "this-week") {
     plansTitle.textContent = "This Week";
     plansNote.textContent = "This view will hold the smaller set of items you want in focus this week.";
-    plansEmptyTitle.textContent = "This Week is ready for planning";
-    plansEmptyNote.textContent = "Next we can add plan items, move them out of backlog, and check them off here.";
+    plansEmptyTitle.textContent = "Nothing in This Week yet";
+    plansEmptyNote.textContent = "Move a few items over from Backlog when you want them in focus.";
+  } else {
+    plansTitle.textContent = "Backlog";
+    plansNote.textContent = "This is where loose ideas, errands, and non-recurring tasks will live.";
+    plansEmptyTitle.textContent = "Your backlog is empty";
+    plansEmptyNote.textContent = "Add ideas here, then move the important ones into This Week.";
+  }
+
+  plansList.innerHTML = "";
+
+  if (!bucketItems.length) {
+    plansEmptyState.classList.remove("is-hidden");
     return;
   }
 
-  plansTitle.textContent = "Backlog";
-  plansNote.textContent = "This is where loose ideas, errands, and non-recurring tasks will live.";
-  plansEmptyTitle.textContent = "Backlog is ready for planning";
-  plansEmptyNote.textContent = "Next we can add plan items, reorder them, and move them into This Week.";
+  plansEmptyState.classList.add("is-hidden");
+
+  bucketItems.forEach((plan) => {
+    const item = document.createElement("article");
+    item.className = "plan-item";
+    item.dataset.planId = plan.id;
+    item.innerHTML = `
+      <div class="plan-item-main">
+        <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">::</span>
+        <input data-plan-checkbox data-plan-id="${plan.id}" type="checkbox" ${plan.completed ? "checked" : ""} />
+        <div class="plan-text ${plan.completed ? "is-complete" : ""}">
+          <span>${escapeHtml(plan.title)}</span>
+        </div>
+      </div>
+      <div class="plan-actions">
+        <button class="ghost-button" data-move-plan-id="${plan.id}" type="button">
+          ${bucketKey === "backlog" ? "Move to This Week" : "Move to Backlog"}
+        </button>
+        <button class="text-button is-danger" data-delete-plan-id="${plan.id}" type="button">Delete</button>
+      </div>
+    `;
+    plansList.append(item);
+  });
 }
 
 function currentDateKey() {
@@ -597,6 +656,7 @@ function saveState() {
   const persisted = {
     screen: state.screen,
     rituals: state.rituals,
+    plans: state.plans,
     completions: state.completions,
     todayView: state.todayView,
     plansView: state.plansView,
@@ -671,6 +731,10 @@ function defaultState() {
     todayView: "checklist",
     plansView: "backlog",
     rituals: [],
+    plans: {
+      backlog: [],
+      thisWeek: [],
+    },
     completions: {},
     expandedRitualIds: {},
     draftItems: [],
@@ -701,6 +765,75 @@ function openNewRitualForm() {
   ritualNameInput.focus();
 }
 
+function addPlanItem() {
+  const title = planInput.value.trim();
+  if (!title) {
+    return;
+  }
+
+  const bucketKey = state.plansView === "this-week" ? "thisWeek" : "backlog";
+  state.plans[bucketKey].push({
+    id: generateId(),
+    title: title,
+    completed: false,
+  });
+  planInput.value = "";
+  saveState();
+  renderPlans();
+  initializeSortables();
+}
+
+function togglePlanCompletion(planId, completed) {
+  const location = findPlanLocation(planId);
+  if (!location) {
+    return;
+  }
+
+  location.plan.completed = completed;
+  saveState();
+  renderPlans();
+}
+
+function movePlanToOtherBucket(planId) {
+  const location = findPlanLocation(planId);
+  if (!location) {
+    return;
+  }
+
+  state.plans[location.bucket] = state.plans[location.bucket].filter((plan) => plan.id !== planId);
+  const targetBucket = location.bucket === "backlog" ? "thisWeek" : "backlog";
+  state.plans[targetBucket].push(location.plan);
+  saveState();
+  renderPlans();
+  initializeSortables();
+}
+
+function deletePlan(planId) {
+  const location = findPlanLocation(planId);
+  if (!location) {
+    return;
+  }
+
+  state.plans[location.bucket] = state.plans[location.bucket].filter((plan) => plan.id !== planId);
+  saveState();
+  renderPlans();
+  initializeSortables();
+}
+
+function findPlanLocation(planId) {
+  const backlogPlan = state.plans.backlog.find((plan) => plan.id === planId);
+  if (backlogPlan) {
+    return { bucket: "backlog", plan: backlogPlan };
+  }
+
+  const thisWeekPlan = state.plans.thisWeek.find((plan) => plan.id === planId);
+  if (thisWeekPlan) {
+    return { bucket: "thisWeek", plan: thisWeekPlan };
+  }
+
+  return null;
+}
+
 function initializeSortables() {
   if (typeof Sortable === "undefined") {
     return;
@@ -712,6 +845,10 @@ function initializeSortables() {
 
   if (draftItemSortable) {
     draftItemSortable.destroy();
+  }
+
+  if (plansSortable) {
+    plansSortable.destroy();
   }
 
   ritualLibrarySortable = new Sortable(ritualLibrary, {
@@ -753,6 +890,29 @@ function initializeSortables() {
       state.draftItems = reorderItems(state.draftItems, event.oldIndex, event.newIndex);
       renderDraftItems();
       syncEditState();
+      initializeSortables();
+    },
+  });
+
+  plansSortable = new Sortable(plansList, {
+    animation: 180,
+    handle: ".drag-handle",
+    delay: 180,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 4,
+    fallbackTolerance: 6,
+    forceFallback: true,
+    ghostClass: "sortable-ghost",
+    dragClass: "sortable-drag",
+    onEnd: function onPlanSort(event) {
+      const bucketKey = state.plansView === "this-week" ? "thisWeek" : "backlog";
+      if (event.oldIndex == null || event.newIndex == null || event.oldIndex === event.newIndex) {
+        return;
+      }
+
+      state.plans[bucketKey] = reorderItems(state.plans[bucketKey], event.oldIndex, event.newIndex);
+      saveState();
+      renderPlans();
       initializeSortables();
     },
   });
