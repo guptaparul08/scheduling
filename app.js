@@ -753,6 +753,11 @@ function initializeSortables() {
   ritualLibrarySortable = new Sortable(ritualLibrary, {
     animation: 180,
     handle: ".drag-handle",
+    delay: 180,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 4,
+    fallbackTolerance: 6,
+    forceFallback: true,
     ghostClass: "sortable-ghost",
     dragClass: "sortable-drag",
     onEnd: function onRitualSort(event) {
@@ -770,6 +775,11 @@ function initializeSortables() {
   draftItemSortable = new Sortable(itemList, {
     animation: 180,
     handle: ".drag-handle",
+    delay: 180,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 4,
+    fallbackTolerance: 6,
+    forceFallback: true,
     ghostClass: "sortable-ghost",
     dragClass: "sortable-drag",
     onEnd: function onItemSort(event) {
