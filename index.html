@@ -59,6 +59,14 @@
           </div>
 
           <form class="ritual-form" id="ritual-form">
+            <div class="edit-banner is-hidden" id="edit-banner">
+              <div>
+                <p class="panel-label">Editing</p>
+                <h3 id="edit-title">Ritual</h3>
+              </div>
+              <button class="secondary-button" id="cancel-edit-top" type="button">Cancel</button>
+            </div>
+
             <input type="hidden" id="ritual-id" />
 
             <label class="field">
@@ -96,7 +104,7 @@
             </label>
 
             <div class="form-actions">
-              <button class="primary-button" type="submit">Save ritual</button>
+              <button class="primary-button" id="save-ritual-button" type="submit">Save ritual</button>
               <button class="secondary-button is-hidden" id="cancel-edit" type="button">Cancel</button>
             </div>
           </form>

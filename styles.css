@@ -258,6 +258,21 @@ h2 {
   gap: 16px;
 }
 
+.edit-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--accent-soft);
+}
+
+.ritual-form.is-editing {
+  scroll-margin-top: 24px;
+}
+
 .field {
   display: grid;
   gap: 12px;
@@ -392,5 +407,10 @@ h2 {
 
   .day-picker {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .edit-banner {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

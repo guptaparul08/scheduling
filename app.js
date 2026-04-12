@@ -16,9 +16,13 @@ const itemInput = document.querySelector("#item-input");
 const itemList = document.querySelector("#item-list");
 const ritualLibrary = document.querySelector("#ritual-library");
 const cancelEditButton = document.querySelector("#cancel-edit");
+const cancelEditTopButton = document.querySelector("#cancel-edit-top");
 const exportCsvButton = document.querySelector("#export-csv-button");
 const importCsvInput = document.querySelector("#import-csv-input");
 const importStatus = document.querySelector("#import-status");
+const editBanner = document.querySelector("#edit-banner");
+const editTitle = document.querySelector("#edit-title");
+const saveRitualButton = document.querySelector("#save-ritual-button");
 
 initialize();
 
@@ -53,9 +57,11 @@ function bindEvents() {
       addDraftItem();
     }
   });
+  ritualNameInput.addEventListener("input", syncEditState);
 
   ritualForm.addEventListener("submit", handleSubmit);
   cancelEditButton.addEventListener("click", resetForm);
+  cancelEditTopButton.addEventListener("click", resetForm);
   exportCsvButton.addEventListener("click", exportRitualsCsv);
   importCsvInput.addEventListener("change", handleImportCsv);
 
@@ -135,6 +141,7 @@ function renderApp() {
   renderToday();
   renderDraftItems();
   renderLibrary();
+  syncEditState();
 }
 
 function renderToday() {
@@ -365,11 +372,12 @@ function populateForm(ritualId) {
   ritualActiveInput.checked = ritual.isActive;
   state.draftItems = ritual.items.map((item) => ({ ...item }));
   state.draftDays = [...ritual.days];
-  cancelEditButton.classList.remove("is-hidden");
   state.screen = "rituals";
   renderDayPicker();
   renderDraftItems();
   renderApp();
+  ritualForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  ritualNameInput.focus();
 }
 
 function resetForm() {
@@ -378,9 +386,9 @@ function resetForm() {
   ritualActiveInput.checked = true;
   state.draftItems = [];
   state.draftDays = [];
-  cancelEditButton.classList.add("is-hidden");
   renderDayPicker();
   renderDraftItems();
+  syncEditState();
 }
 
 function toggleArchive(ritualId) {
@@ -708,6 +716,15 @@ function defaultState() {
     draftItems: [],
     draftDays: [],
   };
+}
+
+function syncEditState() {
+  const isEditing = Boolean(ritualIdInput.value);
+  editBanner.classList.toggle("is-hidden", !isEditing);
+  cancelEditButton.classList.toggle("is-hidden", !isEditing);
+  ritualForm.classList.toggle("is-editing", isEditing);
+  saveRitualButton.textContent = isEditing ? "Update ritual" : "Save ritual";
+  editTitle.textContent = isEditing ? ritualNameInput.value || "Ritual" : "Ritual";
 }
 
 function seedDemoRituals() {
