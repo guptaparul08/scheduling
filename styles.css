@@ -102,6 +102,13 @@ h2 {
   transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
+.nav-icon-button {
+  min-width: 44px;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
+}
+
 .nav-button:hover,
 .segment:hover,
 .secondary-button:hover,
