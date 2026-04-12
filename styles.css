@@ -92,7 +92,8 @@ h2 {
 .nav-button,
 .segment,
 .secondary-button,
-.primary-button {
+.primary-button,
+.file-button {
   border-radius: 999px;
   border: 1px solid var(--border);
   background: transparent;
@@ -104,18 +105,26 @@ h2 {
 .nav-button:hover,
 .segment:hover,
 .secondary-button:hover,
-.primary-button:hover {
+.primary-button:hover,
+.file-button:hover {
   transform: translateY(-1px);
 }
 
 .is-active,
-.primary-button {
+.primary-button,
+.file-button {
   background: var(--accent-soft);
   border-color: #b8c8a7;
 }
 
-.primary-button {
+.primary-button,
+.file-button {
   color: #2d3625;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
 }
 
 .layout {

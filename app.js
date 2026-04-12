@@ -17,6 +17,8 @@ const itemList = document.querySelector("#item-list");
 const ritualLibrary = document.querySelector("#ritual-library");
 const cancelEditButton = document.querySelector("#cancel-edit");
 const exportCsvButton = document.querySelector("#export-csv-button");
+const importCsvInput = document.querySelector("#import-csv-input");
+const importStatus = document.querySelector("#import-status");
 
 initialize();
 
@@ -55,6 +57,7 @@ function bindEvents() {
   ritualForm.addEventListener("submit", handleSubmit);
   cancelEditButton.addEventListener("click", resetForm);
   exportCsvButton.addEventListener("click", exportRitualsCsv);
+  importCsvInput.addEventListener("change", handleImportCsv);
 
   document.body.addEventListener("click", (event) => {
     const openScreen = event.target.closest("[data-open-screen]");
@@ -515,6 +518,184 @@ function exportRitualsCsv() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function handleImportCsv(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function onLoad(loadEvent) {
+    try {
+      const csvText = String(loadEvent.target.result || "");
+      const importedRituals = parseRitualCsv(csvText);
+
+      if (!importedRituals.length) {
+        importStatus.textContent = "No valid rituals found in the CSV.";
+        return;
+      }
+
+      state.rituals = importedRituals;
+      state.completions = {};
+      state.expandedRitualIds = {};
+      saveState();
+      renderApp();
+      importStatus.textContent = `Imported ${importedRituals.length} ritual${importedRituals.length === 1 ? "" : "s"}.`;
+    } catch (error) {
+      importStatus.textContent = "Could not import that CSV. Please check the format.";
+    }
+  };
+
+  reader.readAsText(file);
+  event.target.value = "";
+}
+
+function parseRitualCsv(csvText) {
+  const rows = parseCsvRows(csvText);
+  if (rows.length < 2) {
+    return [];
+  }
+
+  const headers = rows[0].map(function normalizeHeader(header) {
+    return String(header).trim().toLowerCase();
+  });
+
+  const nameIndex = headers.indexOf("name");
+  const noteIndex = headers.indexOf("note");
+  const activeIndex = headers.indexOf("active");
+  const daysIndex = headers.indexOf("days");
+  const itemsIndex = headers.indexOf("items");
+
+  if (nameIndex === -1 || noteIndex === -1 || activeIndex === -1 || daysIndex === -1 || itemsIndex === -1) {
+    throw new Error("Missing required headers");
+  }
+
+  return rows
+    .slice(1)
+    .map(function mapRow(row) {
+      const name = String(row[nameIndex] || "").trim();
+      if (!name) {
+        return null;
+      }
+
+      const note = String(row[noteIndex] || "").trim();
+      const activeValue = String(row[activeIndex] || "").trim().toLowerCase();
+      const days = parseDays(String(row[daysIndex] || ""));
+      const items = String(row[itemsIndex] || "")
+        .split("|")
+        .map(function trimItem(item) {
+          return item.trim();
+        })
+        .filter(Boolean)
+        .map(function toItem(label) {
+          return { id: generateId(), label: label };
+        });
+
+      if (!days.length || !items.length) {
+        return null;
+      }
+
+      return {
+        id: generateId(),
+        name: name,
+        note: note,
+        isActive: activeValue !== "no",
+        days: days,
+        items: items,
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseCsvRows(csvText) {
+  const rows = [];
+  let row = [];
+  let current = "";
+  let inQuotes = false;
+  let index = 0;
+
+  while (index < csvText.length) {
+    const character = csvText[index];
+    const next = csvText[index + 1];
+
+    if (character === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        index += 2;
+        continue;
+      }
+
+      inQuotes = !inQuotes;
+      index += 1;
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      row.push(current);
+      current = "";
+      index += 1;
+      continue;
+    }
+
+    if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (character === "\r" && next === "\n") {
+        index += 1;
+      }
+
+      row.push(current);
+      if (row.some(function hasContent(value) { return String(value).trim() !== ""; })) {
+        rows.push(row);
+      }
+      row = [];
+      current = "";
+      index += 1;
+      continue;
+    }
+
+    current += character;
+    index += 1;
+  }
+
+  row.push(current);
+  if (row.some(function hasContent(value) { return String(value).trim() !== ""; })) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function parseDays(dayString) {
+  return dayString
+    .split(",")
+    .map(function trimDay(day) {
+      return day.trim().slice(0, 3).toLowerCase();
+    })
+    .map(function mapDay(day) {
+      return dayToIndex(day);
+    })
+    .filter(function isNumber(day) {
+      return day !== null;
+    });
+}
+
+function dayToIndex(day) {
+  var dayMap = {
+    sun: 0,
+    mon: 1,
+    tue: 2,
+    wed: 3,
+    thu: 4,
+    fri: 5,
+    sat: 6,
+  };
+
+  if (Object.prototype.hasOwnProperty.call(dayMap, day)) {
+    return dayMap[day];
+  }
+
+  return null;
 }
 
 function defaultState() {
