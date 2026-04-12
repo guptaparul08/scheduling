@@ -28,6 +28,7 @@ const importStatus = document.querySelector("#import-status");
 const editBanner = document.querySelector("#edit-banner");
 const editTitle = document.querySelector("#edit-title");
 const saveRitualButton = document.querySelector("#save-ritual-button");
+const showRitualFormButton = document.querySelector("#show-ritual-form-button");
 let ritualLibrarySortable = null;
 let draftItemSortable = null;
 let activeMenuRitualId = null;
@@ -73,6 +74,7 @@ function bindEvents() {
   cancelEditTopButton.addEventListener("click", resetForm);
   exportCsvButton.addEventListener("click", exportRitualsCsv);
   importCsvInput.addEventListener("change", handleImportCsv);
+  showRitualFormButton.addEventListener("click", openNewRitualForm);
 
   document.body.addEventListener("click", (event) => {
     const openScreen = event.target.closest("[data-open-screen]");
@@ -413,6 +415,7 @@ function populateForm(ritualId) {
   ritualActiveInput.checked = ritual.isActive;
   state.draftItems = ritual.items.map((item) => ({ ...item }));
   state.draftDays = [...ritual.days];
+  state.isFormOpen = true;
   state.screen = "rituals";
   saveState();
   renderDayPicker();
@@ -428,9 +431,12 @@ function resetForm() {
   ritualActiveInput.checked = true;
   state.draftItems = [];
   state.draftDays = [];
+  state.isFormOpen = false;
   renderDayPicker();
   renderDraftItems();
+  saveState();
   syncEditState();
+  renderApp();
 }
 
 function toggleArchive(ritualId) {
@@ -606,6 +612,7 @@ function handleImportCsv(event) {
 function defaultState() {
   return {
     screen: "today",
+    isFormOpen: false,
     todayView: "checklist",
     rituals: [],
     completions: {},
@@ -617,11 +624,25 @@ function defaultState() {
 
 function syncEditState() {
   const isEditing = Boolean(ritualIdInput.value);
+  const shouldShowForm = Boolean(state.isFormOpen || isEditing);
+
+  ritualForm.classList.toggle("is-hidden", !shouldShowForm);
+  showRitualFormButton.classList.toggle("is-hidden", shouldShowForm);
   editBanner.classList.toggle("is-hidden", !isEditing);
   cancelEditButton.classList.toggle("is-hidden", !isEditing);
   ritualForm.classList.toggle("is-editing", isEditing);
   saveRitualButton.textContent = isEditing ? "Update ritual" : "Save ritual";
-  editTitle.textContent = isEditing ? ritualNameInput.value || "Ritual" : "Ritual";
+  editTitle.textContent = isEditing ? ritualNameInput.value || "Ritual" : "New Ritual";
+}
+
+function openNewRitualForm() {
+  resetForm();
+  state.screen = "rituals";
+  state.isFormOpen = true;
+  saveState();
+  renderApp();
+  ritualForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  ritualNameInput.focus();
 }
 
 function initializeSortables() {
