@@ -262,10 +262,6 @@ h2 {
   gap: 16px;
 }
 
-.panel-header .primary-button {
-  align-self: flex-start;
-}
-
 .edit-banner {
   display: flex;
   justify-content: space-between;
@@ -453,6 +449,16 @@ h2 {
   margin-bottom: 12px;
 }
 
+.ritual-cta-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 18px;
+}
+
+.section-label {
+  margin: 6px 0 0;
+}
+
 .is-hidden {
   display: none;
 }
@@ -524,5 +530,10 @@ h2 {
   .overflow-menu {
     right: 0;
     left: auto;
+  }
+
+  .ritual-cta-row .primary-button {
+    width: 100%;
+    justify-content: center;
   }
 }

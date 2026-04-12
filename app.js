@@ -318,7 +318,23 @@ function renderLibrary() {
     return;
   }
 
-  state.rituals.forEach((ritual) => {
+  const activeRituals = state.rituals.filter((ritual) => ritual.isActive);
+  const archivedRituals = state.rituals.filter((ritual) => !ritual.isActive);
+
+  renderRitualSection(activeRituals, "Active");
+
+  if (archivedRituals.length) {
+    renderRitualSection(archivedRituals, "Archived");
+  }
+}
+
+function renderRitualSection(rituals, label) {
+  const heading = document.createElement("p");
+  heading.className = "panel-label section-label";
+  heading.textContent = label;
+  ritualLibrary.append(heading);
+
+  rituals.forEach((ritual) => {
     const compactDays = ritual.days.map((day) => COMPACT_DAY_LABELS[day]).join(" ");
     const card = document.createElement("article");
     card.className = "library-card";
