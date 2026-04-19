@@ -25,6 +25,9 @@ const cancelEditTopButton = document.querySelector("#cancel-edit-top");
 const exportCsvButton = document.querySelector("#export-csv-button");
 const importCsvInput = document.querySelector("#import-csv-input");
 const importStatus = document.querySelector("#import-status");
+const devToolsCard = document.querySelector("#dev-tools-card");
+const simulateNextDayButton = document.querySelector("#simulate-next-day-button");
+const simulateNextDayStatus = document.querySelector("#simulate-next-day-status");
 const editBanner = document.querySelector("#edit-banner");
 const editTitle = document.querySelector("#edit-title");
 const saveRitualButton = document.querySelector("#save-ritual-button");
@@ -50,6 +53,7 @@ function initialize() {
   seedDemoRituals();
   syncDayState();
   applyTheme();
+  syncDevToolsVisibility();
   renderDayPicker();
   bindEvents();
   renderApp();
@@ -120,6 +124,7 @@ function bindEvents() {
   exportCsvButton.addEventListener("click", exportRitualsCsv);
   importCsvInput.addEventListener("change", handleImportCsv);
   showRitualFormButton.addEventListener("click", openNewRitualForm);
+  simulateNextDayButton.addEventListener("click", simulateNextDay);
   addPlanButton.addEventListener("click", addPlanItem);
   planInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -226,6 +231,7 @@ function bindEvents() {
 
 function renderApp() {
   syncDayState();
+  syncDevToolsVisibility();
   document.querySelector("#today-screen").classList.toggle("is-hidden", state.screen !== "today");
   document.querySelector("#rituals-screen").classList.toggle("is-hidden", state.screen !== "rituals");
   document.querySelector("#plans-screen").classList.toggle("is-hidden", state.screen !== "plans");
@@ -698,6 +704,22 @@ function syncThemeButtons() {
   document.querySelectorAll("[data-theme-preference]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.themePreference === state.themePreference);
   });
+}
+
+function syncDevToolsVisibility() {
+  devToolsCard.classList.toggle("is-hidden", !isLocalPreview());
+}
+
+function isLocalPreview() {
+  const hostname = window.location.hostname;
+  return window.location.protocol === "file:" || hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function simulateNextDay() {
+  state.lastViewedDate = "1900-01-01";
+  syncDayState();
+  renderApp();
+  simulateNextDayStatus.textContent = "Simulated a new day. Today's rituals should now be expanded again.";
 }
 
 function loadState() {
