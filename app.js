@@ -37,6 +37,8 @@ const plansList = document.querySelector("#plans-list");
 const plansEmptyState = document.querySelector("#plans-empty-state");
 const planInput = document.querySelector("#plan-input");
 const addPlanButton = document.querySelector("#add-plan-button");
+const themeMediaQuery =
+  typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 let ritualLibrarySortable = null;
 let draftItemSortable = null;
 let plansSortable = null;
@@ -46,6 +48,8 @@ initialize();
 
 function initialize() {
   seedDemoRituals();
+  syncDayState();
+  applyTheme();
   renderDayPicker();
   bindEvents();
   renderApp();
@@ -77,6 +81,29 @@ function bindEvents() {
       syncPlansViewButtons();
     });
   });
+
+  document.querySelectorAll("[data-theme-preference]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.themePreference = button.dataset.themePreference;
+      applyTheme();
+      saveState();
+      syncThemeButtons();
+    });
+  });
+
+  if (themeMediaQuery) {
+    const handleThemeChange = () => {
+      if (state.themePreference === "system") {
+        applyTheme();
+      }
+    };
+
+    if (typeof themeMediaQuery.addEventListener === "function") {
+      themeMediaQuery.addEventListener("change", handleThemeChange);
+    } else if (typeof themeMediaQuery.addListener === "function") {
+      themeMediaQuery.addListener(handleThemeChange);
+    }
+  }
 
   document.querySelector("#add-item-button").addEventListener("click", addDraftItem);
   itemInput.addEventListener("keydown", (event) => {
@@ -198,6 +225,7 @@ function bindEvents() {
 }
 
 function renderApp() {
+  syncDayState();
   document.querySelector("#today-screen").classList.toggle("is-hidden", state.screen !== "today");
   document.querySelector("#rituals-screen").classList.toggle("is-hidden", state.screen !== "rituals");
   document.querySelector("#plans-screen").classList.toggle("is-hidden", state.screen !== "plans");
@@ -209,6 +237,7 @@ function renderApp() {
 
   syncViewModeButtons();
   syncPlansViewButtons();
+  syncThemeButtons();
   renderToday();
   renderDraftItems();
   renderLibrary();
@@ -218,6 +247,7 @@ function renderApp() {
 }
 
 function renderToday() {
+  syncDayState();
   const today = new Date();
   const todayLabel = today.toLocaleDateString(undefined, {
     weekday: "long",
@@ -636,6 +666,40 @@ function currentDateKey() {
   return `${year}-${month}-${day}`;
 }
 
+function syncDayState() {
+  const todayKey = currentDateKey();
+  if (state.lastViewedDate === todayKey) {
+    return;
+  }
+
+  state.lastViewedDate = todayKey;
+  state.expandedRitualIds = {};
+  saveState();
+}
+
+function applyTheme() {
+  const theme = getResolvedTheme();
+  document.documentElement.dataset.theme = theme;
+}
+
+function getResolvedTheme() {
+  if (state.themePreference === "dark") {
+    return "dark";
+  }
+
+  if (state.themePreference === "light") {
+    return "light";
+  }
+
+  return themeMediaQuery && themeMediaQuery.matches ? "dark" : "light";
+}
+
+function syncThemeButtons() {
+  document.querySelectorAll("[data-theme-preference]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.themePreference === state.themePreference);
+  });
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -660,6 +724,8 @@ function saveState() {
     completions: state.completions,
     todayView: state.todayView,
     plansView: state.plansView,
+    themePreference: state.themePreference,
+    lastViewedDate: state.lastViewedDate,
     expandedRitualIds: state.expandedRitualIds,
     isFormOpen: state.isFormOpen,
   };
@@ -730,6 +796,8 @@ function defaultState() {
     isFormOpen: false,
     todayView: "checklist",
     plansView: "backlog",
+    themePreference: "system",
+    lastViewedDate: "",
     rituals: [],
     plans: {
       backlog: [],

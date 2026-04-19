@@ -1,17 +1,44 @@
 :root {
   --bg: #f5f1e8;
+  --bg-top: rgba(255, 255, 255, 0.85);
+  --bg-gradient-start: #f0e9de;
   --panel: #fcfaf5;
+  --panel-overlay: rgba(252, 250, 245, 0.92);
   --panel-strong: #f7f1e6;
   --border: #d8cebe;
+  --panel-border: rgba(216, 206, 190, 0.9);
   --text: #2f2a24;
   --muted: #6e6559;
   --accent: #7b8f6a;
   --accent-soft: #e4ecd9;
+  --accent-border: #b8c8a7;
   --danger: #a64f42;
+  --input-bg: #fffdf9;
   --shadow: 0 18px 50px rgba(62, 42, 17, 0.08);
   --radius: 24px;
   --radius-sm: 14px;
+  color-scheme: light;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --bg: #171a19;
+  --bg-top: rgba(110, 143, 117, 0.12);
+  --bg-gradient-start: #202522;
+  --panel: #202521;
+  --panel-overlay: rgba(32, 37, 33, 0.92);
+  --panel-strong: #2a322c;
+  --border: #3d4a42;
+  --panel-border: rgba(61, 74, 66, 0.9);
+  --text: #edf2ea;
+  --muted: #b6c1b6;
+  --accent: #9ab886;
+  --accent-soft: #304032;
+  --accent-border: #647d61;
+  --danger: #f08b78;
+  --input-bg: #161b18;
+  --shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+  color-scheme: dark;
 }
 
 * {
@@ -21,8 +48,8 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.85), transparent 38%),
-    linear-gradient(180deg, #f0e9de 0%, var(--bg) 100%);
+    radial-gradient(circle at top left, var(--bg-top), transparent 38%),
+    linear-gradient(180deg, var(--bg-gradient-start) 0%, var(--bg) 100%);
   color: var(--text);
 }
 
@@ -42,9 +69,9 @@ button {
 
 .topbar,
 .panel {
-  background: rgba(252, 250, 245, 0.92);
+  background: var(--panel-overlay);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(216, 206, 190, 0.9);
+  border: 1px solid var(--panel-border);
   box-shadow: var(--shadow);
 }
 
@@ -146,7 +173,7 @@ h2 {
 .primary-button,
 .file-button {
   background: var(--accent-soft);
-  border-color: #b8c8a7;
+  border-color: var(--accent-border);
 }
 
 .primary-button,
@@ -346,7 +373,8 @@ h2 {
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: #fffdf9;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 .item-builder {
@@ -367,7 +395,8 @@ h2 {
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: #fffdf9;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 .plans-list {
@@ -539,14 +568,18 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 10px 0;
-  background: #fffdf9;
+  background: var(--input-bg);
   color: var(--muted);
 }
 
 .day-pill.is-selected {
   background: var(--accent-soft);
-  border-color: #b8c8a7;
+  border-color: var(--accent-border);
   color: var(--text);
+}
+
+.settings-segmented-control {
+  margin-top: 18px;
 }
 
 .inline-toggle {

@@ -175,14 +175,26 @@
           <div class="panel-header">
             <div>
               <p class="panel-label">Settings</p>
-              <h2>Export</h2>
+              <h2>Appearance and Data</h2>
               <p class="panel-note">
-                Download your ritual definitions as a CSV file.
+                Choose a theme and manage your ritual data.
               </p>
             </div>
           </div>
 
           <div class="settings-card">
+            <h3>Theme</h3>
+            <p class="panel-note">
+              Use the app in light mode, dark mode, or follow your phone or browser theme.
+            </p>
+            <div class="segmented-control settings-segmented-control" role="group" aria-label="Theme preference">
+              <button class="segment" data-theme-preference="system" type="button">Use device</button>
+              <button class="segment" data-theme-preference="light" type="button">Light</button>
+              <button class="segment" data-theme-preference="dark" type="button">Dark</button>
+            </div>
+          </div>
+
+          <div class="settings-card" style="margin-top: 16px;">
             <h3>Ritual CSV</h3>
             <p class="panel-note">
               Includes ritual name, note, active status, scheduled days, and checklist items.
