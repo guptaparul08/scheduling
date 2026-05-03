@@ -825,6 +825,22 @@ function defaultCloudState() {
   };
 }
 
+function canPrepareGoogleAuth() {
+  return Boolean(driveSyncController && typeof driveSyncController.prepare === "function");
+}
+
+function isGoogleAuthPrepared() {
+  if (!driveSyncController) {
+    return false;
+  }
+
+  if (typeof driveSyncController.isPrepared === "function") {
+    return driveSyncController.isPrepared();
+  }
+
+  return true;
+}
+
 async function initializeGoogleSync() {
   renderGoogleSync();
 
@@ -836,7 +852,9 @@ async function initializeGoogleSync() {
     syncErrorMessage = "";
     syncStatusMessage = "Loading Google sign-in...";
     renderGoogleSync();
-    await driveSyncController.prepare();
+    if (canPrepareGoogleAuth()) {
+      await driveSyncController.prepare();
+    }
     isGoogleAuthReady = true;
     syncStatusMessage = "Checking for an existing Google session...";
     renderGoogleSync();
@@ -877,7 +895,7 @@ async function handleGoogleSignIn() {
     return;
   }
 
-  if (!isGoogleAuthReady || !driveSyncController.isPrepared()) {
+  if (!isGoogleAuthReady || !isGoogleAuthPrepared()) {
     syncStatusMessage = "Google sign-in is still loading. Try again in a moment.";
     renderGoogleSync();
     return;
@@ -1029,9 +1047,7 @@ async function synchronizeWithDrive(options = {}) {
 
 function renderGoogleSync() {
   const hasClientId = Boolean(cloudState.googleClientId);
-  const canStartGoogleSignIn = Boolean(
-    hasClientId && driveSyncController && isGoogleAuthReady && driveSyncController.isPrepared()
-  );
+  const canStartGoogleSignIn = Boolean(hasClientId && driveSyncController && isGoogleAuthReady && isGoogleAuthPrepared());
   const isSignedIn = Boolean(driveSyncController && driveSyncController.isSignedIn());
   const accountLabel = cloudState.googleAccountEmail || cloudState.googleAccountName;
   const statusText = syncErrorMessage || getGoogleSyncStatusMessage(hasClientId, isSignedIn);
