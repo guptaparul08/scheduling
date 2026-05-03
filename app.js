@@ -1,4 +1,5 @@
 const STORAGE_KEY = "ritual-flow-v1";
+const GOOGLE_CLIENT_ID = "654954244387-nin76cpo9g0t9adkmnnumn85ot8n3uq9.apps.googleusercontent.com";
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const COMPACT_DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const RitualFlowCore = window.RitualFlowCore || {};
@@ -51,8 +52,6 @@ const plansList = document.querySelector("#plans-list");
 const plansEmptyState = document.querySelector("#plans-empty-state");
 const planInput = document.querySelector("#plan-input");
 const addPlanButton = document.querySelector("#add-plan-button");
-const googleClientIdInput = document.querySelector("#google-client-id-input");
-const saveGoogleClientIdButton = document.querySelector("#save-google-client-id-button");
 const googleSignInButton = document.querySelector("#google-sign-in-button");
 const googleSyncNowButton = document.querySelector("#google-sync-now-button");
 const googleSignOutButton = document.querySelector("#google-sign-out-button");
@@ -70,11 +69,13 @@ let syncTimer = null;
 let syncInFlight = false;
 let syncStatusMessage = "";
 let syncErrorMessage = "";
+let isGoogleAuthReady = false;
 
 initialize();
 
 function initialize() {
   seedDemoRituals();
+  cloudState.googleClientId = GOOGLE_CLIENT_ID;
   if (driveSyncController) {
     driveSyncController.setClientId(cloudState.googleClientId);
   }
@@ -160,16 +161,9 @@ function bindEvents() {
       addPlanItem();
     }
   });
-  saveGoogleClientIdButton.addEventListener("click", saveGoogleClientId);
   googleSignInButton.addEventListener("click", handleGoogleSignIn);
   googleSyncNowButton.addEventListener("click", () => synchronizeWithDrive({ manual: true }));
   googleSignOutButton.addEventListener("click", handleGoogleSignOut);
-  googleClientIdInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      saveGoogleClientId();
-    }
-  });
 
   document.body.addEventListener("click", (event) => {
     const openScreen = event.target.closest("[data-open-screen]");
@@ -821,7 +815,7 @@ function getLocalSyncEnvelope() {
 
 function defaultCloudState() {
   return {
-    googleClientId: "",
+    googleClientId: GOOGLE_CLIENT_ID,
     googleAccountEmail: "",
     googleAccountName: "",
     driveFileId: "",
@@ -840,6 +834,10 @@ async function initializeGoogleSync() {
 
   try {
     syncErrorMessage = "";
+    syncStatusMessage = "Loading Google sign-in...";
+    renderGoogleSync();
+    await driveSyncController.prepare();
+    isGoogleAuthReady = true;
     syncStatusMessage = "Checking for an existing Google session...";
     renderGoogleSync();
     const profile = await driveSyncController.maybeRestoreSession();
@@ -847,7 +845,7 @@ async function initializeGoogleSync() {
     if (!profile) {
       syncStatusMessage = cloudState.googleAccountEmail
         ? "Reconnect to Google to resume Drive sync."
-        : "Client ID saved. Sign in with Google to sync this device.";
+        : "Sign in with Google to sync this device.";
       renderGoogleSync();
       return;
     }
@@ -859,28 +857,11 @@ async function initializeGoogleSync() {
     renderGoogleSync();
     await synchronizeWithDrive({ manual: false });
   } catch (error) {
+    isGoogleAuthReady = false;
     syncErrorMessage = getErrorMessage(error, "Could not initialize Google Drive sync.");
     syncStatusMessage = "Drive sync is available, but the Google session could not be restored.";
     renderGoogleSync();
   }
-}
-
-function saveGoogleClientId() {
-  const nextClientId = googleClientIdInput.value.trim();
-  cloudState.googleClientId = nextClientId;
-  cloudState.googleAccountEmail = "";
-  cloudState.googleAccountName = "";
-  syncErrorMessage = "";
-  syncStatusMessage = nextClientId
-    ? "Client ID saved. Sign in with Google to enable Drive sync."
-    : "Client ID removed. The app is now using local-only storage.";
-
-  if (driveSyncController) {
-    driveSyncController.setClientId(nextClientId);
-  }
-
-  persistSnapshot();
-  renderGoogleSync();
 }
 
 async function handleGoogleSignIn() {
@@ -890,12 +871,14 @@ async function handleGoogleSignIn() {
     return;
   }
 
-  if (googleClientIdInput.value.trim() !== cloudState.googleClientId) {
-    saveGoogleClientId();
+  if (!cloudState.googleClientId) {
+    syncStatusMessage = "Google sign-in is not configured for this build yet.";
+    renderGoogleSync();
+    return;
   }
 
-  if (!cloudState.googleClientId) {
-    syncStatusMessage = "Add your Google OAuth client ID before signing in.";
+  if (!isGoogleAuthReady || !driveSyncController.isPrepared()) {
+    syncStatusMessage = "Google sign-in is still loading. Try again in a moment.";
     renderGoogleSync();
     return;
   }
@@ -963,7 +946,7 @@ async function synchronizeWithDrive(options = {}) {
   }
 
   if (!driveSyncController.isConfigured()) {
-    syncStatusMessage = "Add a Google OAuth client ID to enable Drive sync.";
+    syncStatusMessage = "Google sign-in is not configured for this build yet.";
     renderGoogleSync();
     return;
   }
@@ -1045,17 +1028,15 @@ async function synchronizeWithDrive(options = {}) {
 }
 
 function renderGoogleSync() {
-  if (document.activeElement !== googleClientIdInput) {
-    googleClientIdInput.value = cloudState.googleClientId;
-  }
-
   const hasClientId = Boolean(cloudState.googleClientId);
+  const canStartGoogleSignIn = Boolean(
+    hasClientId && driveSyncController && isGoogleAuthReady && driveSyncController.isPrepared()
+  );
   const isSignedIn = Boolean(driveSyncController && driveSyncController.isSignedIn());
   const accountLabel = cloudState.googleAccountEmail || cloudState.googleAccountName;
   const statusText = syncErrorMessage || getGoogleSyncStatusMessage(hasClientId, isSignedIn);
 
-  saveGoogleClientIdButton.disabled = syncInFlight;
-  googleSignInButton.disabled = !hasClientId || syncInFlight;
+  googleSignInButton.disabled = !canStartGoogleSignIn || syncInFlight;
   googleSyncNowButton.disabled = !isSignedIn || syncInFlight;
   googleSignOutButton.disabled = !isSignedIn || syncInFlight;
   googleSyncNowButton.classList.toggle("is-hidden", !hasClientId);
@@ -1083,11 +1064,15 @@ function getGoogleSyncStatusMessage(hasClientId, isSignedIn) {
   }
 
   if (!hasClientId) {
-    return "Add a Google OAuth client ID to enable Drive sync.";
+    return "Google sign-in is not configured for this build yet.";
+  }
+
+  if (!isGoogleAuthReady) {
+    return "Loading Google sign-in...";
   }
 
   if (!isSignedIn) {
-    return "Client ID saved. Sign in with Google to sync this device.";
+    return "Sign in with Google to sync this device.";
   }
 
   return "Google Drive sync is ready.";

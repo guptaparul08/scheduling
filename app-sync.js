@@ -37,6 +37,8 @@
     let accessToken = "";
     let profile = null;
     let hasAttemptedSilentSignIn = false;
+    let isReady = false;
+    let preparePromise = null;
 
     function setClientId(nextClientId) {
       const normalized = String(nextClientId || "").trim();
@@ -49,6 +51,8 @@
       accessToken = "";
       profile = null;
       hasAttemptedSilentSignIn = false;
+      isReady = false;
+      preparePromise = null;
     }
 
     function getClientId() {
@@ -59,6 +63,10 @@
       return Boolean(clientId);
     }
 
+    function isPrepared() {
+      return isReady;
+    }
+
     function isSignedIn() {
       return Boolean(accessToken);
     }
@@ -67,27 +75,53 @@
       return profile ? { ...profile } : null;
     }
 
-    async function ensureTokenClient() {
+    async function prepare() {
       if (!clientId) {
-        throw new Error("Add your Google OAuth client ID before signing in.");
+        throw new Error("Google sign-in is not configured for this build.");
       }
 
-      await loadGoogleScript();
+      if (tokenClient && isReady) {
+        return tokenClient;
+      }
 
-      if (!tokenClient) {
+      if (preparePromise) {
+        return preparePromise;
+      }
+
+      preparePromise = (async function initializeTokenClient() {
+        await loadGoogleScript();
+
         tokenClient = globalScope.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope: GOOGLE_SCOPES,
           callback: () => {},
           error_callback: () => {},
         });
+        isReady = true;
+        return tokenClient;
+      })();
+
+      try {
+        return await preparePromise;
+      } finally {
+        preparePromise = null;
+      }
+    }
+
+    function ensureTokenClient() {
+      if (!clientId) {
+        throw new Error("Google sign-in is not configured for this build.");
+      }
+
+      if (!tokenClient || !isReady) {
+        throw new Error("Google sign-in is still loading. Try again in a moment.");
       }
 
       return tokenClient;
     }
 
-    async function requestAccessToken(promptValue) {
-      const nextTokenClient = await ensureTokenClient();
+    function requestAccessToken(promptValue) {
+      const nextTokenClient = ensureTokenClient();
 
       return new Promise((resolve, reject) => {
         nextTokenClient.callback = (response) => {
@@ -134,6 +168,7 @@
       hasAttemptedSilentSignIn = true;
 
       try {
+        await prepare();
         await requestAccessToken("");
         return await fetchUserProfile();
       } catch {
@@ -299,8 +334,10 @@
       setClientId,
       getClientId,
       isConfigured,
+      isPrepared,
       isSignedIn,
       getProfile,
+      prepare,
       signIn,
       maybeRestoreSession,
       signOut,
