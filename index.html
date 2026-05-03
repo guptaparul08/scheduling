@@ -195,6 +195,41 @@
           </div>
 
           <div class="settings-card" style="margin-top: 16px;">
+            <h3>Google Drive Sync</h3>
+            <p class="panel-note">
+              Sign in with Google to sync rituals, plans, completions, and your latest app view across devices.
+            </p>
+            <label class="field" style="margin-top: 16px;">
+              <span>Google OAuth client ID</span>
+              <input
+                id="google-client-id-input"
+                type="text"
+                placeholder="Paste your Google Web client ID"
+                autocomplete="off"
+              />
+            </label>
+            <div class="form-actions" style="margin-top: 16px;">
+              <button class="primary-button" id="save-google-client-id-button" type="button">
+                Save Client ID
+              </button>
+              <button class="secondary-button" id="google-sign-in-button" type="button">
+                Sign in with Google
+              </button>
+              <button class="secondary-button" id="google-sync-now-button" type="button">
+                Sync now
+              </button>
+              <button class="secondary-button" id="google-sign-out-button" type="button">
+                Sign out
+              </button>
+            </div>
+            <p class="panel-note" id="google-sync-status">
+              Add a Google OAuth client ID to enable Drive sync.
+            </p>
+            <p class="panel-note is-hidden" id="google-sync-account"></p>
+            <p class="panel-note is-hidden" id="google-sync-meta"></p>
+          </div>
+
+          <div class="settings-card" style="margin-top: 16px;">
             <h3>Ritual CSV</h3>
             <p class="panel-note">
               Includes ritual name, note, active status, scheduled days, and checklist items.
@@ -244,6 +279,7 @@
     </template>
 
     <script src="app-core.js"></script>
+    <script src="app-sync.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
     <script src="app.js"></script>
   </body>

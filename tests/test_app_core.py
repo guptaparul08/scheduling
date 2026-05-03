@@ -101,3 +101,240 @@ def test_reorder_items_moves_item_without_mutating_source():
 
     assert reordered == ["a", "c", "d", "b"]
     assert original == ["a", "b", "c", "d"]
+
+
+def test_persisted_snapshot_splits_syncable_and_device_state():
+    context = make_context()
+    snapshot = eval_json(
+        context,
+        """
+        RitualFlowCore.createPersistedSnapshot(
+          {
+            screen: "plans",
+            isFormOpen: true,
+            todayView: "simple",
+            plansView: "this-week",
+            themePreference: "dark",
+            lastViewedDate: "2026-05-02",
+            rituals: [{ id: "r1", name: "Morning" }],
+            plans: { backlog: [{ id: "p1" }], thisWeek: [] },
+            completions: { "2026-05-02": { r1: { i1: true } } },
+            expandedRitualIds: { r1: true },
+            draftItems: [{ id: "i1", label: "Tea" }],
+            draftDays: [1, 3]
+          },
+          {
+            googleClientId: "client-id.apps.googleusercontent.com",
+            lastSyncedAt: "2026-05-02T15:30:00.000Z"
+          }
+        )
+        """,
+    )
+
+    assert snapshot["syncable"] == {
+        "screen": "plans",
+        "rituals": [{"id": "r1", "name": "Morning"}],
+        "plans": {"backlog": [{"id": "p1"}], "thisWeek": []},
+        "completions": {"2026-05-02": {"r1": {"i1": True}}},
+        "todayView": "simple",
+        "plansView": "this-week",
+        "themePreference": "dark",
+    }
+    assert snapshot["device"] == {
+        "isFormOpen": True,
+        "lastViewedDate": "2026-05-02",
+        "expandedRitualIds": {"r1": True},
+        "draftItems": [{"id": "i1", "label": "Tea"}],
+        "draftDays": [1, 3],
+    }
+    assert snapshot["cloud"]["googleClientId"] == "client-id.apps.googleusercontent.com"
+
+
+def test_hydrate_persisted_state_supports_new_snapshot_shape():
+    context = make_context()
+    restored = eval_json(
+        context,
+        """
+        RitualFlowCore.hydratePersistedState(
+          {
+            syncable: {
+              screen: "settings",
+              rituals: [{ id: "r9", name: "Night" }],
+              plans: { backlog: [], thisWeek: [{ id: "p3" }] },
+              completions: {},
+              todayView: "simple",
+              plansView: "this-week",
+              themePreference: "dark"
+            },
+            device: {
+              isFormOpen: true,
+              lastViewedDate: "2026-05-02",
+              expandedRitualIds: { r9: false },
+              draftItems: [{ id: "i3", label: "Read" }],
+              draftDays: [0, 6]
+            }
+          },
+          {
+            screen: "today",
+            isFormOpen: false,
+            todayView: "checklist",
+            plansView: "backlog",
+            themePreference: "system",
+            lastViewedDate: "",
+            rituals: [],
+            plans: { backlog: [], thisWeek: [] },
+            completions: {},
+            expandedRitualIds: {},
+            draftItems: [],
+            draftDays: []
+          }
+        )
+        """,
+    )
+
+    assert restored["screen"] == "settings"
+    assert restored["rituals"] == [{"id": "r9", "name": "Night"}]
+    assert restored["plans"]["thisWeek"] == [{"id": "p3"}]
+    assert restored["themePreference"] == "dark"
+    assert restored["isFormOpen"] is True
+    assert restored["draftDays"] == [0, 6]
+
+
+def test_hydrate_persisted_state_supports_legacy_flat_snapshot():
+    context = make_context()
+    restored = eval_json(
+        context,
+        """
+        RitualFlowCore.hydratePersistedState(
+          {
+            screen: "plans",
+            rituals: [{ id: "legacy", name: "Legacy" }],
+            plansView: "this-week",
+            isFormOpen: true
+          },
+          {
+            screen: "today",
+            isFormOpen: false,
+            todayView: "checklist",
+            plansView: "backlog",
+            themePreference: "system",
+            lastViewedDate: "",
+            rituals: [],
+            plans: { backlog: [], thisWeek: [] },
+            completions: {},
+            expandedRitualIds: {},
+            draftItems: [],
+            draftDays: []
+          }
+        )
+        """,
+    )
+
+    assert restored["screen"] == "plans"
+    assert restored["rituals"] == [{"id": "legacy", "name": "Legacy"}]
+    assert restored["plansView"] == "this-week"
+    assert restored["isFormOpen"] is True
+
+
+def test_create_sync_envelope_and_apply_sync_envelope_round_trip():
+    context = make_context()
+    envelope = eval_json(
+        context,
+        """
+        RitualFlowCore.createSyncEnvelope(
+          {
+            screen: "plans",
+            isFormOpen: true,
+            todayView: "simple",
+            plansView: "backlog",
+            themePreference: "light",
+            lastViewedDate: "2026-05-02",
+            rituals: [{ id: "r1", name: "Morning" }],
+            plans: { backlog: [{ id: "p1" }], thisWeek: [] },
+            completions: { "2026-05-02": { r1: { i1: true } } },
+            expandedRitualIds: { r1: true },
+            draftItems: [{ id: "i1", label: "Tea" }],
+            draftDays: [1]
+          },
+          "2026-05-02T18:20:00.000Z"
+        )
+        """,
+    )
+    applied = eval_json(
+        context,
+        f"""
+        RitualFlowCore.applySyncEnvelope(
+          {{
+            screen: "today",
+            isFormOpen: false,
+            todayView: "checklist",
+            plansView: "backlog",
+            themePreference: "system",
+            lastViewedDate: "",
+            rituals: [],
+            plans: {{ backlog: [], thisWeek: [] }},
+            completions: {{}},
+            expandedRitualIds: {{}},
+            draftItems: [],
+            draftDays: []
+          }},
+          {json.dumps(envelope)}
+        )
+        """,
+    )
+
+    assert envelope["updatedAt"] == "2026-05-02T18:20:00.000Z"
+    assert envelope["state"]["screen"] == "plans"
+    assert "draftItems" not in envelope["state"]
+    assert applied["screen"] == "plans"
+    assert applied["rituals"] == [{"id": "r1", "name": "Morning"}]
+    assert applied["themePreference"] == "light"
+    assert applied["isFormOpen"] is False
+    assert applied["draftItems"] == []
+
+
+def test_decide_sync_direction_prefers_newer_or_missing_remote_state():
+    context = make_context()
+    upload_when_remote_missing = context.eval(
+        """
+        RitualFlowCore.decideSyncDirection(
+          {
+            updatedAt: "2026-05-02T18:20:00.000Z",
+            state: { screen: "today" }
+          },
+          null
+        )
+        """
+    )
+    download_when_remote_newer = context.eval(
+        """
+        RitualFlowCore.decideSyncDirection(
+          {
+            updatedAt: "2026-05-02T18:20:00.000Z",
+            state: { screen: "today" }
+          },
+          {
+            updatedAt: "2026-05-02T18:30:00.000Z",
+            state: { screen: "plans" }
+          }
+        )
+        """
+    )
+    noop_when_same = context.eval(
+        """
+        RitualFlowCore.decideSyncDirection(
+          {
+            updatedAt: "2026-05-02T18:30:00.000Z",
+            state: { screen: "plans" }
+          },
+          {
+            updatedAt: "2026-05-02T18:30:00.000Z",
+            state: { screen: "plans" }
+          }
+        )
+        """
+    )
+
+    assert upload_when_remote_missing == "upload"
+    assert download_when_remote_newer == "download"
+    assert noop_when_same == "noop"

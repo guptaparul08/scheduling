@@ -152,6 +152,10 @@
     return `"${stringValue.replace(/"/g, '""')}"`;
   }
 
+  function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
   function reorderItems(items, fromIndex, toIndex) {
     const nextItems = items.slice();
 
@@ -168,12 +172,145 @@
     return `ritual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  function buildSyncableState(state) {
+    return cloneJson({
+      screen: state.screen,
+      rituals: state.rituals,
+      plans: state.plans,
+      completions: state.completions,
+      todayView: state.todayView,
+      plansView: state.plansView,
+      themePreference: state.themePreference,
+    });
+  }
+
+  function buildDeviceState(state) {
+    return cloneJson({
+      isFormOpen: state.isFormOpen,
+      lastViewedDate: state.lastViewedDate,
+      expandedRitualIds: state.expandedRitualIds,
+      draftItems: state.draftItems,
+      draftDays: state.draftDays,
+    });
+  }
+
+  function createPersistedSnapshot(state, cloud) {
+    return {
+      syncable: buildSyncableState(state),
+      device: buildDeviceState(state),
+      cloud: cloneJson(cloud || {}),
+    };
+  }
+
+  function hydratePersistedState(snapshot, baseState) {
+    const seedState = cloneJson(baseState || {});
+    if (!snapshot || typeof snapshot !== "object") {
+      return seedState;
+    }
+
+    if (!snapshot.syncable && !snapshot.device) {
+      return {
+        ...seedState,
+        ...cloneJson(snapshot),
+      };
+    }
+
+    return {
+      ...seedState,
+      ...cloneJson(snapshot.syncable || {}),
+      ...cloneJson(snapshot.device || {}),
+    };
+  }
+
+  function createSyncEnvelope(state, updatedAt) {
+    return {
+      schemaVersion: 1,
+      updatedAt: normalizeTimestamp(updatedAt) || new Date().toISOString(),
+      state: buildSyncableState(state),
+    };
+  }
+
+  function applySyncEnvelope(baseState, envelope) {
+    const seedState = cloneJson(baseState || {});
+    if (!envelope || typeof envelope !== "object" || !envelope.state || typeof envelope.state !== "object") {
+      return seedState;
+    }
+
+    return {
+      ...seedState,
+      ...cloneJson(envelope.state),
+    };
+  }
+
+  function decideSyncDirection(localEnvelope, remoteEnvelope) {
+    const hasLocal = hasSyncState(localEnvelope);
+    const hasRemote = hasSyncState(remoteEnvelope);
+
+    if (hasLocal && !hasRemote) {
+      return "upload";
+    }
+
+    if (!hasLocal && hasRemote) {
+      return "download";
+    }
+
+    if (!hasLocal && !hasRemote) {
+      return "noop";
+    }
+
+    const localTimestamp = getEnvelopeTimestamp(localEnvelope);
+    const remoteTimestamp = getEnvelopeTimestamp(remoteEnvelope);
+
+    if (localTimestamp > remoteTimestamp) {
+      return "upload";
+    }
+
+    if (remoteTimestamp > localTimestamp) {
+      return "download";
+    }
+
+    return JSON.stringify(localEnvelope.state) === JSON.stringify(remoteEnvelope.state) ? "noop" : "upload";
+  }
+
+  function hasSyncState(envelope) {
+    return Boolean(envelope && typeof envelope === "object" && envelope.state && typeof envelope.state === "object");
+  }
+
+  function getEnvelopeTimestamp(envelope) {
+    const normalized = normalizeTimestamp(envelope && envelope.updatedAt);
+    if (!normalized) {
+      return 0;
+    }
+
+    return new Date(normalized).getTime();
+  }
+
+  function normalizeTimestamp(value) {
+    if (!value) {
+      return "";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    return date.toISOString();
+  }
+
   globalScope.RitualFlowCore = {
     parseRitualCsv: parseRitualCsv,
     parseCsvRows: parseCsvRows,
     parseDays: parseDays,
     dayToIndex: dayToIndex,
     escapeCsv: escapeCsv,
+    buildSyncableState: buildSyncableState,
+    buildDeviceState: buildDeviceState,
+    createPersistedSnapshot: createPersistedSnapshot,
+    hydratePersistedState: hydratePersistedState,
+    createSyncEnvelope: createSyncEnvelope,
+    applySyncEnvelope: applySyncEnvelope,
+    decideSyncDirection: decideSyncDirection,
     reorderItems: reorderItems,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

@@ -238,6 +238,10 @@ h2 {
   line-height: 1.5;
 }
 
+.panel-note.is-danger-text {
+  color: var(--danger);
+}
+
 .ritual-list,
 .library-list {
   display: grid;
@@ -541,7 +545,9 @@ h2 {
 }
 
 .ghost-button:disabled,
-.text-button:disabled {
+.text-button:disabled,
+.primary-button:disabled,
+.secondary-button:disabled {
   opacity: 0.35;
   cursor: default;
 }

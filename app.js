@@ -4,9 +4,20 @@ const COMPACT_DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const RitualFlowCore = window.RitualFlowCore || {};
 const parseRitualCsv = RitualFlowCore.parseRitualCsv;
 const escapeCsv = RitualFlowCore.escapeCsv;
+const buildSyncableState = RitualFlowCore.buildSyncableState;
+const createPersistedSnapshot = RitualFlowCore.createPersistedSnapshot;
+const hydratePersistedState = RitualFlowCore.hydratePersistedState;
+const createSyncEnvelope = RitualFlowCore.createSyncEnvelope;
+const applySyncEnvelope = RitualFlowCore.applySyncEnvelope;
 const reorderItems = RitualFlowCore.reorderItems;
-
-const state = loadState();
+const RitualFlowSync = window.RitualFlowSync || {};
+const persistedSnapshot = loadPersistedSnapshot();
+const state = persistedSnapshot.state;
+const cloudState = persistedSnapshot.cloud;
+const driveSyncController =
+  typeof RitualFlowSync.createDriveSyncController === "function"
+    ? RitualFlowSync.createDriveSyncController()
+    : null;
 
 const todayDate = document.querySelector("#today-date");
 const todaySummary = document.querySelector("#today-summary");
@@ -40,23 +51,40 @@ const plansList = document.querySelector("#plans-list");
 const plansEmptyState = document.querySelector("#plans-empty-state");
 const planInput = document.querySelector("#plan-input");
 const addPlanButton = document.querySelector("#add-plan-button");
+const googleClientIdInput = document.querySelector("#google-client-id-input");
+const saveGoogleClientIdButton = document.querySelector("#save-google-client-id-button");
+const googleSignInButton = document.querySelector("#google-sign-in-button");
+const googleSyncNowButton = document.querySelector("#google-sync-now-button");
+const googleSignOutButton = document.querySelector("#google-sign-out-button");
+const googleSyncStatus = document.querySelector("#google-sync-status");
+const googleSyncAccount = document.querySelector("#google-sync-account");
+const googleSyncMeta = document.querySelector("#google-sync-meta");
 const themeMediaQuery =
   typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 let ritualLibrarySortable = null;
 let draftItemSortable = null;
 let plansSortable = null;
 let activeMenuRitualId = null;
+let lastSyncableSignature = getSyncableSignature(state);
+let syncTimer = null;
+let syncInFlight = false;
+let syncStatusMessage = "";
+let syncErrorMessage = "";
 
 initialize();
 
 function initialize() {
   seedDemoRituals();
+  if (driveSyncController) {
+    driveSyncController.setClientId(cloudState.googleClientId);
+  }
   syncDayState();
   applyTheme();
   syncDevToolsVisibility();
   renderDayPicker();
   bindEvents();
   renderApp();
+  initializeGoogleSync();
 }
 
 function bindEvents() {
@@ -130,6 +158,16 @@ function bindEvents() {
     if (event.key === "Enter") {
       event.preventDefault();
       addPlanItem();
+    }
+  });
+  saveGoogleClientIdButton.addEventListener("click", saveGoogleClientId);
+  googleSignInButton.addEventListener("click", handleGoogleSignIn);
+  googleSyncNowButton.addEventListener("click", () => synchronizeWithDrive({ manual: true }));
+  googleSignOutButton.addEventListener("click", handleGoogleSignOut);
+  googleClientIdInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveGoogleClientId();
     }
   });
 
@@ -232,6 +270,7 @@ function bindEvents() {
 function renderApp() {
   syncDayState();
   syncDevToolsVisibility();
+  applyTheme();
   document.querySelector("#today-screen").classList.toggle("is-hidden", state.screen !== "today");
   document.querySelector("#rituals-screen").classList.toggle("is-hidden", state.screen !== "rituals");
   document.querySelector("#plans-screen").classList.toggle("is-hidden", state.screen !== "plans");
@@ -248,6 +287,7 @@ function renderApp() {
   renderDraftItems();
   renderLibrary();
   renderPlans();
+  renderGoogleSync();
   syncEditState();
   initializeSortables();
 }
@@ -722,36 +762,353 @@ function simulateNextDay() {
   simulateNextDayStatus.textContent = "Simulated a new day. Today's rituals should now be expanded again.";
 }
 
-function loadState() {
+function loadPersistedSnapshot() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return defaultState();
+      return {
+        state: defaultState(),
+        cloud: defaultCloudState(),
+      };
     }
 
+    const parsed = JSON.parse(raw);
     return {
-      ...defaultState(),
-      ...JSON.parse(raw),
+      state: hydratePersistedState(parsed, defaultState()),
+      cloud: {
+        ...defaultCloudState(),
+        ...(parsed.cloud || {}),
+      },
     };
   } catch {
-    return defaultState();
+    return {
+      state: defaultState(),
+      cloud: defaultCloudState(),
+    };
   }
 }
 
-function saveState() {
-  const persisted = {
-    screen: state.screen,
-    rituals: state.rituals,
-    plans: state.plans,
-    completions: state.completions,
-    todayView: state.todayView,
-    plansView: state.plansView,
-    themePreference: state.themePreference,
-    lastViewedDate: state.lastViewedDate,
-    expandedRitualIds: state.expandedRitualIds,
-    isFormOpen: state.isFormOpen,
-  };
+function saveState(options = {}) {
+  const nextSyncableSignature = getSyncableSignature(state);
+  const syncableChanged = nextSyncableSignature !== lastSyncableSignature;
+
+  if (syncableChanged) {
+    lastSyncableSignature = nextSyncableSignature;
+    if (!options.preserveLocalUpdatedAt) {
+      cloudState.localUpdatedAt = new Date().toISOString();
+    }
+  }
+
+  persistSnapshot();
+
+  if (!options.skipRemoteSync && syncableChanged) {
+    scheduleRemoteSync();
+  }
+}
+
+function persistSnapshot() {
+  const persisted = createPersistedSnapshot(state, cloudState);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+}
+
+function getSyncableSignature(sourceState) {
+  return JSON.stringify(buildSyncableState(sourceState));
+}
+
+function getLocalSyncEnvelope() {
+  return createSyncEnvelope(state, cloudState.localUpdatedAt || "1970-01-01T00:00:00.000Z");
+}
+
+function defaultCloudState() {
+  return {
+    googleClientId: "",
+    googleAccountEmail: "",
+    googleAccountName: "",
+    driveFileId: "",
+    lastSyncedAt: "",
+    lastRemoteUpdatedAt: "",
+    localUpdatedAt: "",
+  };
+}
+
+async function initializeGoogleSync() {
+  renderGoogleSync();
+
+  if (!driveSyncController || !cloudState.googleClientId) {
+    return;
+  }
+
+  try {
+    syncErrorMessage = "";
+    syncStatusMessage = "Checking for an existing Google session...";
+    renderGoogleSync();
+    const profile = await driveSyncController.maybeRestoreSession();
+
+    if (!profile) {
+      syncStatusMessage = cloudState.googleAccountEmail
+        ? "Reconnect to Google to resume Drive sync."
+        : "Client ID saved. Sign in with Google to sync this device.";
+      renderGoogleSync();
+      return;
+    }
+
+    cloudState.googleAccountEmail = profile.email || cloudState.googleAccountEmail;
+    cloudState.googleAccountName = profile.name || cloudState.googleAccountName;
+    persistSnapshot();
+    syncStatusMessage = "Connected to Google. Checking Drive for newer data...";
+    renderGoogleSync();
+    await synchronizeWithDrive({ manual: false });
+  } catch (error) {
+    syncErrorMessage = getErrorMessage(error, "Could not initialize Google Drive sync.");
+    syncStatusMessage = "Drive sync is available, but the Google session could not be restored.";
+    renderGoogleSync();
+  }
+}
+
+function saveGoogleClientId() {
+  const nextClientId = googleClientIdInput.value.trim();
+  cloudState.googleClientId = nextClientId;
+  cloudState.googleAccountEmail = "";
+  cloudState.googleAccountName = "";
+  syncErrorMessage = "";
+  syncStatusMessage = nextClientId
+    ? "Client ID saved. Sign in with Google to enable Drive sync."
+    : "Client ID removed. The app is now using local-only storage.";
+
+  if (driveSyncController) {
+    driveSyncController.setClientId(nextClientId);
+  }
+
+  persistSnapshot();
+  renderGoogleSync();
+}
+
+async function handleGoogleSignIn() {
+  if (!driveSyncController) {
+    syncErrorMessage = "Google Drive sync is not available in this build.";
+    renderGoogleSync();
+    return;
+  }
+
+  if (googleClientIdInput.value.trim() !== cloudState.googleClientId) {
+    saveGoogleClientId();
+  }
+
+  if (!cloudState.googleClientId) {
+    syncStatusMessage = "Add your Google OAuth client ID before signing in.";
+    renderGoogleSync();
+    return;
+  }
+
+  try {
+    syncErrorMessage = "";
+    syncStatusMessage = "Opening Google sign-in...";
+    renderGoogleSync();
+    const profile = await driveSyncController.signIn();
+    cloudState.googleAccountEmail = profile.email || "";
+    cloudState.googleAccountName = profile.name || "";
+    persistSnapshot();
+    syncStatusMessage = "Signed in. Syncing with Google Drive...";
+    renderGoogleSync();
+    await synchronizeWithDrive({ manual: true });
+  } catch (error) {
+    syncErrorMessage = getErrorMessage(error, "Google sign-in failed.");
+    syncStatusMessage = "Could not complete Google sign-in.";
+    renderGoogleSync();
+  }
+}
+
+async function handleGoogleSignOut() {
+  if (!driveSyncController) {
+    return;
+  }
+
+  if (syncTimer) {
+    window.clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+
+  await driveSyncController.signOut();
+  cloudState.googleAccountEmail = "";
+  cloudState.googleAccountName = "";
+  syncErrorMessage = "";
+  syncStatusMessage = "Signed out of Google. Your local data is still available on this device.";
+  persistSnapshot();
+  renderGoogleSync();
+}
+
+function scheduleRemoteSync() {
+  if (!driveSyncController || !driveSyncController.isConfigured() || !driveSyncController.isSignedIn()) {
+    renderGoogleSync();
+    return;
+  }
+
+  if (syncTimer) {
+    window.clearTimeout(syncTimer);
+  }
+
+  syncStatusMessage = "Changes saved locally. Google Drive sync is queued.";
+  renderGoogleSync();
+  syncTimer = window.setTimeout(() => {
+    syncTimer = null;
+    synchronizeWithDrive({ manual: false });
+  }, 1200);
+}
+
+async function synchronizeWithDrive(options = {}) {
+  if (!driveSyncController) {
+    syncErrorMessage = "Google Drive sync is not available in this build.";
+    renderGoogleSync();
+    return;
+  }
+
+  if (!driveSyncController.isConfigured()) {
+    syncStatusMessage = "Add a Google OAuth client ID to enable Drive sync.";
+    renderGoogleSync();
+    return;
+  }
+
+  if (!driveSyncController.isSignedIn()) {
+    syncStatusMessage = "Sign in with Google to sync this device with Drive.";
+    renderGoogleSync();
+    return;
+  }
+
+  if (syncInFlight) {
+    if (options.manual) {
+      syncStatusMessage = "A Google Drive sync is already in progress.";
+      renderGoogleSync();
+    }
+    return;
+  }
+
+  if (syncTimer) {
+    window.clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+
+  let shouldRenderApp = false;
+
+  syncInFlight = true;
+  syncErrorMessage = "";
+  syncStatusMessage = "Syncing with Google Drive...";
+  renderGoogleSync();
+
+  try {
+    const result = await driveSyncController.syncEnvelope(getLocalSyncEnvelope(), cloudState.driveFileId);
+    const syncedAt = new Date().toISOString();
+
+    if (result.profile) {
+      cloudState.googleAccountEmail = result.profile.email || cloudState.googleAccountEmail;
+      cloudState.googleAccountName = result.profile.name || cloudState.googleAccountName;
+    }
+
+    if (result.fileId) {
+      cloudState.driveFileId = result.fileId;
+    }
+
+    cloudState.lastSyncedAt = syncedAt;
+    cloudState.lastRemoteUpdatedAt = result.remoteUpdatedAt || cloudState.lastRemoteUpdatedAt;
+
+    if (result.action === "download") {
+      const nextState = applySyncEnvelope(state, result.envelope);
+      Object.assign(state, nextState);
+      cloudState.localUpdatedAt = result.envelope.updatedAt || syncedAt;
+      lastSyncableSignature = getSyncableSignature(state);
+      syncStatusMessage = "Loaded the newest data from Google Drive.";
+      persistSnapshot();
+      shouldRenderApp = true;
+    } else if (result.action === "upload") {
+      cloudState.localUpdatedAt = result.envelope.updatedAt || cloudState.localUpdatedAt || syncedAt;
+      lastSyncableSignature = getSyncableSignature(state);
+      syncStatusMessage = "Saved the latest changes to Google Drive.";
+      persistSnapshot();
+    } else {
+      cloudState.localUpdatedAt = result.envelope.updatedAt || cloudState.localUpdatedAt || syncedAt;
+      lastSyncableSignature = getSyncableSignature(state);
+      syncStatusMessage = "Google Drive is already up to date.";
+      persistSnapshot();
+    }
+  } catch (error) {
+    syncErrorMessage = getErrorMessage(error, "Could not sync with Google Drive.");
+    syncStatusMessage = options.manual
+      ? "Google Drive sync failed."
+      : "Automatic sync paused until the next successful connection.";
+  } finally {
+    syncInFlight = false;
+    if (shouldRenderApp) {
+      renderApp();
+    } else {
+      renderGoogleSync();
+    }
+  }
+}
+
+function renderGoogleSync() {
+  if (document.activeElement !== googleClientIdInput) {
+    googleClientIdInput.value = cloudState.googleClientId;
+  }
+
+  const hasClientId = Boolean(cloudState.googleClientId);
+  const isSignedIn = Boolean(driveSyncController && driveSyncController.isSignedIn());
+  const accountLabel = cloudState.googleAccountEmail || cloudState.googleAccountName;
+  const statusText = syncErrorMessage || getGoogleSyncStatusMessage(hasClientId, isSignedIn);
+
+  saveGoogleClientIdButton.disabled = syncInFlight;
+  googleSignInButton.disabled = !hasClientId || syncInFlight;
+  googleSyncNowButton.disabled = !isSignedIn || syncInFlight;
+  googleSignOutButton.disabled = !isSignedIn || syncInFlight;
+  googleSyncNowButton.classList.toggle("is-hidden", !hasClientId);
+  googleSignOutButton.classList.toggle("is-hidden", !hasClientId);
+
+  googleSyncStatus.textContent = statusText;
+  googleSyncStatus.classList.toggle("is-danger-text", Boolean(syncErrorMessage));
+  googleSyncAccount.textContent = accountLabel ? `Signed in as ${accountLabel}.` : "";
+  googleSyncAccount.classList.toggle("is-hidden", !accountLabel);
+
+  const metaParts = [];
+  if (cloudState.lastSyncedAt) {
+    metaParts.push(`Last synced ${formatSyncTimestamp(cloudState.lastSyncedAt)}.`);
+  }
+  if (cloudState.driveFileId) {
+    metaParts.push("Stored in your Google Drive app data.");
+  }
+  googleSyncMeta.textContent = metaParts.join(" ");
+  googleSyncMeta.classList.toggle("is-hidden", !metaParts.length);
+}
+
+function getGoogleSyncStatusMessage(hasClientId, isSignedIn) {
+  if (syncStatusMessage) {
+    return syncStatusMessage;
+  }
+
+  if (!hasClientId) {
+    return "Add a Google OAuth client ID to enable Drive sync.";
+  }
+
+  if (!isSignedIn) {
+    return "Client ID saved. Sign in with Google to sync this device.";
+  }
+
+  return "Google Drive sync is ready.";
+}
+
+function formatSyncTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function getErrorMessage(error, fallback) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function exportRitualsCsv() {
@@ -1010,6 +1367,10 @@ function initializeSortables() {
 
 function seedDemoRituals() {
   if (state.rituals.length) {
+    return;
+  }
+
+  if (cloudState.googleClientId || cloudState.googleAccountEmail || cloudState.lastSyncedAt) {
     return;
   }
 
