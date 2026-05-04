@@ -280,26 +280,29 @@
     });
   }
 
-  function createSyncEnvelope(state, updatedAt) {
+  function createSyncEnvelope(state, updatedAt, version) {
     return {
       schemaVersion: 1,
       updatedAt: normalizeTimestamp(updatedAt) || new Date().toISOString(),
+      version: normalizeEnvelopeVersion(version),
       state: buildSyncableState(state),
     };
   }
 
-  function createStructureSyncEnvelope(state, updatedAt) {
+  function createStructureSyncEnvelope(state, updatedAt, version) {
     return {
       schemaVersion: 1,
       updatedAt: normalizeTimestamp(updatedAt) || new Date().toISOString(),
+      version: normalizeEnvelopeVersion(version),
       state: buildStructureState(state),
     };
   }
 
-  function createProgressSyncEnvelope(state, updatedAt) {
+  function createProgressSyncEnvelope(state, updatedAt, version) {
     return {
       schemaVersion: 1,
       updatedAt: normalizeTimestamp(updatedAt) || new Date().toISOString(),
+      version: normalizeEnvelopeVersion(version),
       state: buildProgressState(state),
     };
   }
@@ -468,6 +471,17 @@
       return "noop";
     }
 
+    const localVersion = getEnvelopeVersion(localEnvelope);
+    const remoteVersion = getEnvelopeVersion(remoteEnvelope);
+
+    if (localVersion > remoteVersion) {
+      return "upload";
+    }
+
+    if (remoteVersion > localVersion) {
+      return "download";
+    }
+
     const localTimestamp = getEnvelopeTimestamp(localEnvelope);
     const remoteTimestamp = getEnvelopeTimestamp(remoteEnvelope);
 
@@ -486,6 +500,10 @@
     return Boolean(envelope && typeof envelope === "object" && envelope.state && typeof envelope.state === "object");
   }
 
+  function getEnvelopeVersion(envelope) {
+    return normalizeEnvelopeVersion(envelope && envelope.version);
+  }
+
   function getEnvelopeTimestamp(envelope) {
     const normalized = normalizeTimestamp(envelope && envelope.updatedAt);
     if (!normalized) {
@@ -493,6 +511,15 @@
     }
 
     return new Date(normalized).getTime();
+  }
+
+  function normalizeEnvelopeVersion(value) {
+    const normalized = Number(value);
+    if (!Number.isInteger(normalized) || normalized < 0) {
+      return 0;
+    }
+
+    return normalized;
   }
 
   function normalizeTimestamp(value) {
@@ -528,6 +555,7 @@
     applyStructureSyncEnvelope: applyStructureSyncEnvelope,
     applyProgressSyncEnvelope: applyProgressSyncEnvelope,
     decideSyncDirection: decideSyncDirection,
+    getEnvelopeVersion: getEnvelopeVersion,
     getItemScheduledDays: getItemScheduledDays,
     getRitualItemsForDay: getRitualItemsForDay,
     reorderItems: reorderItems,

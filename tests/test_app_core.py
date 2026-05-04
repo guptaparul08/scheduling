@@ -317,7 +317,8 @@ def test_create_sync_envelope_and_apply_sync_envelope_round_trip():
             draftItems: [{ id: "i1", label: "Tea" }],
             draftDays: [1]
           },
-          "2026-05-02T18:20:00.000Z"
+          "2026-05-02T18:20:00.000Z",
+          4
         )
         """,
     )
@@ -345,6 +346,7 @@ def test_create_sync_envelope_and_apply_sync_envelope_round_trip():
     )
 
     assert envelope["updatedAt"] == "2026-05-02T18:20:00.000Z"
+    assert envelope["version"] == 4
     assert envelope["state"]["screen"] == "plans"
     assert "draftItems" not in envelope["state"]
     assert applied["screen"] == "plans"
@@ -488,3 +490,42 @@ def test_decide_sync_direction_prefers_newer_or_missing_remote_state():
     assert upload_when_remote_missing == "upload"
     assert download_when_remote_newer == "download"
     assert noop_when_same == "noop"
+
+
+def test_decide_sync_direction_prefers_higher_version_before_timestamp():
+    context = make_context()
+    download_when_remote_version_is_higher = context.eval(
+        """
+        RitualFlowCore.decideSyncDirection(
+          {
+            updatedAt: "2026-05-03T18:30:00.000Z",
+            version: 2,
+            state: { screen: "today" }
+          },
+          {
+            updatedAt: "2026-05-03T18:20:00.000Z",
+            version: 3,
+            state: { screen: "plans" }
+          }
+        )
+        """
+    )
+    upload_when_local_version_is_higher = context.eval(
+        """
+        RitualFlowCore.decideSyncDirection(
+          {
+            updatedAt: "2026-05-03T18:20:00.000Z",
+            version: 5,
+            state: { screen: "today" }
+          },
+          {
+            updatedAt: "2026-05-03T18:30:00.000Z",
+            version: 4,
+            state: { screen: "plans" }
+          }
+        )
+        """
+    )
+
+    assert download_when_remote_version_is_higher == "download"
+    assert upload_when_local_version_is_higher == "upload"

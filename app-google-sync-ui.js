@@ -74,9 +74,9 @@
         cloudState.googleAccountEmail = profile.email || cloudState.googleAccountEmail;
         cloudState.googleAccountName = profile.name || cloudState.googleAccountName;
         persistSnapshot();
-        syncStatusMessage = "Connected to Google. Refreshing daily progress...";
+        syncStatusMessage = "Connected to Google. Checking ritual backups and daily progress...";
         render();
-        await synchronizeProgressWithDrive({ manual: false });
+        await refreshLatestDriveState();
       } catch (error) {
         isGoogleAuthReady = false;
         syncErrorMessage = getErrorMessage(error, "Could not initialize Google Drive sync.");
@@ -139,9 +139,9 @@
         cloudState.googleAccountEmail = profile.email || "";
         cloudState.googleAccountName = profile.name || "";
         persistSnapshot();
-        syncStatusMessage = "Signed in. Refreshing daily progress...";
+        syncStatusMessage = "Signed in. Checking ritual backups and daily progress...";
         render();
-        await synchronizeProgressWithDrive({ manual: false });
+        await refreshLatestDriveState();
       } catch (error) {
         syncErrorMessage = getErrorMessage(error, "Google sign-in failed.");
         syncStatusMessage = "Could not complete Google sign-in.";
@@ -267,6 +267,48 @@
       }
     }
 
+    async function refreshLatestDriveState() {
+      if (!driveSyncController || !driveSyncController.isConfigured() || !driveSyncController.isSignedIn()) {
+        render();
+        return;
+      }
+
+      if (syncInFlight) {
+        return;
+      }
+
+      let shouldRenderApp = false;
+      syncInFlight = true;
+      syncErrorMessage = "";
+      render();
+
+      try {
+        syncStatusMessage = "Checking ritual backups...";
+        render();
+        const structureResult = await refreshStructureFromDrive();
+        shouldRenderApp = shouldRenderApp || structureResult.shouldRenderApp;
+
+        syncStatusMessage = structureResult.action === "download"
+          ? "Loaded the latest rituals. Checking daily progress..."
+          : "Checking daily progress...";
+        render();
+        const progressResult = await syncProgressFile();
+        shouldRenderApp = shouldRenderApp || progressResult.shouldRenderApp;
+
+        syncStatusMessage = getRefreshSuccessMessage(structureResult.action, progressResult.action);
+      } catch (error) {
+        syncErrorMessage = getErrorMessage(error, "Could not refresh Google Drive data.");
+        syncStatusMessage = "Drive data could not be refreshed right now.";
+      } finally {
+        syncInFlight = false;
+        if (shouldRenderApp) {
+          renderApp();
+        } else {
+          render();
+        }
+      }
+    }
+
     async function syncStructureFile() {
       const result = await driveSyncController.syncFileEnvelope(getLocalStructureEnvelope(), {
         existingFileId: cloudState.structureFileId,
@@ -290,6 +332,32 @@
       }
 
       markLocalStructureSyncState(result.envelope.updatedAt || cloudState.structureLocalUpdatedAt || syncedAt);
+      persistSnapshot();
+      return { action: result.action, shouldRenderApp: false };
+    }
+
+    async function refreshStructureFromDrive() {
+      const result = await driveSyncController.resolveFileEnvelope(getLocalStructureEnvelope(), {
+        existingFileId: cloudState.structureFileId,
+        fileName: getStructureFileName(),
+      });
+      const syncedAt = new Date().toISOString();
+
+      syncAccountState(result.profile);
+
+      if (result.fileId) {
+        cloudState.structureFileId = result.fileId;
+      }
+
+      cloudState.lastStructureRemoteUpdatedAt = result.remoteUpdatedAt || cloudState.lastStructureRemoteUpdatedAt;
+
+      if (result.action === "download") {
+        cloudState.lastStructureSyncedAt = syncedAt;
+        applyRemoteStructureEnvelope(result.envelope, syncedAt);
+        persistSnapshot();
+        return { action: "download", shouldRenderApp: true };
+      }
+
       persistSnapshot();
       return { action: result.action, shouldRenderApp: false };
     }
@@ -424,6 +492,44 @@
         : "Google Drive is already up to date.";
     }
 
+    function getRefreshSuccessMessage(structureAction, progressAction) {
+      if (structureAction === "download") {
+        return progressAction === "download"
+          ? "Loaded the latest rituals and progress from Google Drive."
+          : "Loaded the latest rituals from Google Drive.";
+      }
+
+      if (structureAction === "keep-local") {
+        if (!cloudState.structureFileId && !cloudState.lastStructureRemoteUpdatedAt) {
+          return "No ritual backup was found in Google Drive yet. This device is using its local rituals until you press Sync now.";
+        }
+
+        if (progressAction === "download") {
+          return "Loaded newer progress from Google Drive. Your local ritual changes are still newer than the backup.";
+        }
+
+        return cloudState.hasPendingStructureSync
+          ? "Your local ritual changes are newer than the Drive backup. Use Sync now when you want to back them up."
+          : "Your local ritual structure is already the latest copy on this device.";
+      }
+
+      if (progressAction === "download") {
+        return cloudState.hasPendingStructureSync
+          ? "Today's progress was refreshed. Ritual changes still need Sync now."
+          : "Today's progress was refreshed from Google Drive.";
+      }
+
+      if (progressAction === "upload") {
+        return cloudState.hasPendingStructureSync
+          ? "Today's progress is synced. Ritual changes still need Sync now."
+          : "Today's progress is synced with Google Drive.";
+      }
+
+      return cloudState.hasPendingStructureSync
+        ? "Your local ritual changes are newer than the Drive backup. Use Sync now when you want to back them up."
+        : "Google Drive is already up to date for this device.";
+    }
+
     function getProgressSuccessMessage(action) {
       if (action === "download") {
         return cloudState.hasPendingStructureSync
@@ -467,7 +573,11 @@
         return "Today's progress will sync automatically.";
       }
 
-      return "Daily progress sync is active. Use Sync now when you change rituals or plans.";
+      if (!cloudState.structureFileId && !cloudState.lastStructureRemoteUpdatedAt) {
+        return "Daily progress sync is active. Use Sync now when you want to create your first ritual backup.";
+      }
+
+      return "Daily progress sync is active. Newer ritual backups from Drive will load automatically.";
     }
 
     function formatSyncTimestamp(timestamp) {

@@ -13,6 +13,7 @@ Ritual Flow is a lightweight browser app for recurring rituals, daily checklists
 - Persists data locally in the browser
 - Optionally syncs app data to the signed-in user's Google Drive `appDataFolder`
   Daily progress syncs automatically, while ritual and plan changes are backed up manually with `Sync now`.
+  Signed-in app loads will also download a newer ritual backup from Drive when one exists there.
 
 ## File Layout
 
@@ -46,8 +47,11 @@ Drive sync is also intentionally split:
 
 - Structure sync:
   `rituals`, `plans`, and view preferences are backed up manually through `Sync now`
+  Startup and sign-in still compare the local saved structure against Drive and automatically load the newer backed-up copy when Drive is ahead
 - Progress sync:
   `completions` sync automatically when a Google session is active
+
+Both sync lanes carry a monotonically increasing `version` plus `updatedAt`, so devices can compare local state against the Drive backup more reliably.
 
 ## Sync Architecture
 
@@ -66,7 +70,7 @@ That separation is intentional:
 - Google/Drive API changes should mostly live in `app-sync.js`
 - Sync workflow changes should mostly live in `app-google-sync-ui.js`
 
-Signed-in sessions still do an initial Drive check for daily progress on restore, but ritual and plan backups remain user-initiated through `Sync now`.
+Signed-in sessions still do an initial Drive check on restore. Daily progress can upload or download automatically, while ritual structure only auto-downloads when Drive has a newer backed-up version. Structure uploads remain user-initiated through `Sync now`.
 
 ## Development
 

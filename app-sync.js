@@ -196,6 +196,38 @@
       });
     }
 
+    async function resolveFileEnvelope(localEnvelope, options) {
+      if (!accessToken) {
+        throw new Error("Sign in with Google before syncing.");
+      }
+
+      const syncOptions = options || {};
+      const remoteSnapshot = await readRemoteFileEnvelope(syncOptions);
+      const remoteFile = remoteSnapshot.file;
+      const remoteEnvelope = remoteSnapshot.envelope;
+      const direction = globalScope.RitualFlowCore.decideSyncDirection(localEnvelope, remoteEnvelope);
+
+      if (direction === "download" && remoteFile && remoteEnvelope) {
+        return {
+          action: "download",
+          envelope: remoteEnvelope,
+          fileId: remoteFile.id,
+          remoteUpdatedAt: remoteFile.modifiedTime || remoteEnvelope.updatedAt || "",
+          profile: getProfile(),
+        };
+      }
+
+      return {
+        action: direction === "upload" ? "keep-local" : "noop",
+        envelope: localEnvelope,
+        fileId: remoteFile ? remoteFile.id : syncOptions.existingFileId || "",
+        remoteUpdatedAt: remoteFile
+          ? remoteFile.modifiedTime || (remoteEnvelope && remoteEnvelope.updatedAt) || ""
+          : "",
+        profile: getProfile(),
+      };
+    }
+
     async function syncFileEnvelope(localEnvelope, options) {
       if (!accessToken) {
         throw new Error("Sign in with Google before syncing.");
@@ -203,23 +235,10 @@
 
       const syncOptions = options || {};
       const fileName = String(syncOptions.fileName || STRUCTURE_FILE_NAME);
-      const fallbackFileNames = Array.isArray(syncOptions.fallbackFileNames) ? syncOptions.fallbackFileNames : [];
-      const primaryFile = await findDriveFile(syncOptions.existingFileId, fileName);
-      let remoteFile = primaryFile;
-      let remoteEnvelope = remoteFile ? await downloadFile(remoteFile.id) : null;
-
-      if (!remoteFile && fallbackFileNames.length) {
-        for (const fallbackFileName of fallbackFileNames) {
-          const fallbackFile = await findDriveFile("", fallbackFileName);
-          if (!fallbackFile) {
-            continue;
-          }
-
-          remoteFile = fallbackFile;
-          remoteEnvelope = await downloadFile(fallbackFile.id);
-          break;
-        }
-      }
+      const remoteSnapshot = await readRemoteFileEnvelope(syncOptions);
+      const primaryFile = remoteSnapshot.primaryFile;
+      const remoteFile = remoteSnapshot.file;
+      const remoteEnvelope = remoteSnapshot.envelope;
 
       const direction = globalScope.RitualFlowCore.decideSyncDirection(localEnvelope, remoteEnvelope);
 
@@ -256,6 +275,34 @@
           ? remoteFile.modifiedTime || (remoteEnvelope && remoteEnvelope.updatedAt) || ""
           : localEnvelope.updatedAt || "",
         profile: getProfile(),
+      };
+    }
+
+    async function readRemoteFileEnvelope(options) {
+      const syncOptions = options || {};
+      const fileName = String(syncOptions.fileName || STRUCTURE_FILE_NAME);
+      const fallbackFileNames = Array.isArray(syncOptions.fallbackFileNames) ? syncOptions.fallbackFileNames : [];
+      const primaryFile = await findDriveFile(syncOptions.existingFileId, fileName);
+      let remoteFile = primaryFile;
+      let remoteEnvelope = remoteFile ? await downloadFile(remoteFile.id) : null;
+
+      if (!remoteFile && fallbackFileNames.length) {
+        for (const fallbackFileName of fallbackFileNames) {
+          const fallbackFile = await findDriveFile("", fallbackFileName);
+          if (!fallbackFile) {
+            continue;
+          }
+
+          remoteFile = fallbackFile;
+          remoteEnvelope = await downloadFile(fallbackFile.id);
+          break;
+        }
+      }
+
+      return {
+        primaryFile: primaryFile,
+        file: remoteFile,
+        envelope: remoteEnvelope,
       };
     }
 
@@ -376,6 +423,7 @@
       maybeRestoreSession,
       signOut,
       syncEnvelope,
+      resolveFileEnvelope,
       syncFileEnvelope,
     };
   }

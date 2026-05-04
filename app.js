@@ -26,10 +26,11 @@ const hydratePersistedState = RitualFlowCore.hydratePersistedState;
 const createStructureSyncEnvelope =
   RitualFlowCore.createStructureSyncEnvelope || RitualFlowCore.createSyncEnvelope;
 const createProgressSyncEnvelope =
-  RitualFlowCore.createProgressSyncEnvelope || function fallbackCreateProgressSyncEnvelope(sourceState, updatedAt) {
+  RitualFlowCore.createProgressSyncEnvelope || function fallbackCreateProgressSyncEnvelope(sourceState, updatedAt, version) {
     return {
       schemaVersion: 1,
       updatedAt: updatedAt || new Date().toISOString(),
+      version: Number.isInteger(version) && version >= 0 ? version : 0,
       state: buildProgressState(sourceState),
     };
   };
@@ -71,6 +72,16 @@ const getRitualItemsForDay =
     return ritual.items.filter((item) => getItemScheduledDays(item, ritual.days).includes(dayIndex));
   };
 const reorderItems = RitualFlowCore.reorderItems;
+const getEnvelopeVersion =
+  RitualFlowCore.getEnvelopeVersion ||
+  function fallbackGetEnvelopeVersion(envelope) {
+    const normalized = Number(envelope && envelope.version);
+    if (!Number.isInteger(normalized) || normalized < 0) {
+      return 0;
+    }
+
+    return normalized;
+  };
 const RitualFlowSync = window.RitualFlowSync || {};
 const RitualFlowGoogleSyncUI = window.RitualFlowGoogleSyncUI || {};
 const persistedSnapshot = loadPersistedSnapshot();
@@ -1047,6 +1058,7 @@ function saveState(options = {}) {
     lastStructureSignature = nextStructureSignature;
     if (!options.preserveLocalUpdatedAt) {
       cloudState.structureLocalUpdatedAt = new Date().toISOString();
+      cloudState.structureVersion = (cloudState.structureVersion || 0) + 1;
     }
   }
 
@@ -1054,6 +1066,7 @@ function saveState(options = {}) {
     lastProgressSignature = nextProgressSignature;
     if (!options.preserveLocalUpdatedAt) {
       cloudState.progressLocalUpdatedAt = new Date().toISOString();
+      cloudState.progressVersion = (cloudState.progressVersion || 0) + 1;
     }
   }
 
@@ -1088,11 +1101,19 @@ function getSyncableSignature(sourceState) {
 }
 
 function getLocalStructureEnvelope() {
-  return createStructureSyncEnvelope(state, cloudState.structureLocalUpdatedAt || "1970-01-01T00:00:00.000Z");
+  return createStructureSyncEnvelope(
+    state,
+    cloudState.structureLocalUpdatedAt || "1970-01-01T00:00:00.000Z",
+    cloudState.structureVersion || 0,
+  );
 }
 
 function getLocalProgressEnvelope() {
-  return createProgressSyncEnvelope(state, cloudState.progressLocalUpdatedAt || "1970-01-01T00:00:00.000Z");
+  return createProgressSyncEnvelope(
+    state,
+    cloudState.progressLocalUpdatedAt || "1970-01-01T00:00:00.000Z",
+    cloudState.progressVersion || 0,
+  );
 }
 
 function defaultCloudState() {
@@ -1110,6 +1131,8 @@ function defaultCloudState() {
     lastProgressRemoteUpdatedAt: "",
     structureLocalUpdatedAt: "",
     progressLocalUpdatedAt: "",
+    structureVersion: 0,
+    progressVersion: 0,
   };
 }
 
@@ -1139,6 +1162,14 @@ function normalizeCloudState(rawCloud) {
     nextCloudState.progressLocalUpdatedAt = nextCloudState.localUpdatedAt;
   }
 
+  if (!Number.isInteger(nextCloudState.structureVersion) || nextCloudState.structureVersion < 0) {
+    nextCloudState.structureVersion = 0;
+  }
+
+  if (!Number.isInteger(nextCloudState.progressVersion) || nextCloudState.progressVersion < 0) {
+    nextCloudState.progressVersion = 0;
+  }
+
   return nextCloudState;
 }
 
@@ -1146,6 +1177,7 @@ function applyRemoteStructureEnvelope(envelope, syncedAt) {
   const nextState = applyStructureSyncEnvelope(state, envelope);
   Object.assign(state, nextState);
   cloudState.structureLocalUpdatedAt = envelope.updatedAt || syncedAt;
+  cloudState.structureVersion = getEnvelopeVersion(envelope);
   cloudState.hasPendingStructureSync = false;
   lastStructureSignature = getStructureSignature(state);
   lastProgressSignature = getProgressSignature(state);
@@ -1155,6 +1187,7 @@ function applyRemoteProgressEnvelope(envelope, syncedAt) {
   const nextState = applyProgressSyncEnvelope(state, envelope);
   Object.assign(state, nextState);
   cloudState.progressLocalUpdatedAt = envelope.updatedAt || syncedAt;
+  cloudState.progressVersion = getEnvelopeVersion(envelope);
   cloudState.hasPendingProgressSync = false;
   lastProgressSignature = getProgressSignature(state);
 }
