@@ -12,6 +12,7 @@ const createSyncEnvelope = RitualFlowCore.createSyncEnvelope;
 const applySyncEnvelope = RitualFlowCore.applySyncEnvelope;
 const reorderItems = RitualFlowCore.reorderItems;
 const RitualFlowSync = window.RitualFlowSync || {};
+const RitualFlowGoogleSyncUI = window.RitualFlowGoogleSyncUI || {};
 const persistedSnapshot = loadPersistedSnapshot();
 const state = persistedSnapshot.state;
 const cloudState = persistedSnapshot.cloud;
@@ -65,27 +66,41 @@ let draftItemSortable = null;
 let plansSortable = null;
 let activeMenuRitualId = null;
 let lastSyncableSignature = getSyncableSignature(state);
-let syncTimer = null;
-let syncInFlight = false;
-let syncStatusMessage = "";
-let syncErrorMessage = "";
-let isGoogleAuthReady = false;
+const googleSyncUI =
+  typeof RitualFlowGoogleSyncUI.createController === "function"
+    ? RitualFlowGoogleSyncUI.createController({
+        googleClientId: GOOGLE_CLIENT_ID,
+        driveSyncController: driveSyncController,
+        cloudState: cloudState,
+        elements: {
+          googleSignInButton: googleSignInButton,
+          googleSyncNowButton: googleSyncNowButton,
+          googleSignOutButton: googleSignOutButton,
+          googleSyncStatus: googleSyncStatus,
+          googleSyncAccount: googleSyncAccount,
+          googleSyncMeta: googleSyncMeta,
+        },
+        persistSnapshot: persistSnapshot,
+        renderApp: renderApp,
+        getLocalSyncEnvelope: getLocalSyncEnvelope,
+        applyRemoteEnvelope: applyRemoteEnvelope,
+        markLocalSyncState: markLocalSyncState,
+      })
+    : null;
 
 initialize();
 
 function initialize() {
   seedDemoRituals();
-  cloudState.googleClientId = GOOGLE_CLIENT_ID;
-  if (driveSyncController) {
-    driveSyncController.setClientId(cloudState.googleClientId);
-  }
   syncDayState();
   applyTheme();
   syncDevToolsVisibility();
   renderDayPicker();
   bindEvents();
   renderApp();
-  initializeGoogleSync();
+  if (googleSyncUI) {
+    googleSyncUI.initialize();
+  }
 }
 
 function bindEvents() {
@@ -161,9 +176,9 @@ function bindEvents() {
       addPlanItem();
     }
   });
-  googleSignInButton.addEventListener("click", handleGoogleSignIn);
-  googleSyncNowButton.addEventListener("click", () => synchronizeWithDrive({ manual: true }));
-  googleSignOutButton.addEventListener("click", handleGoogleSignOut);
+  if (googleSyncUI) {
+    googleSyncUI.bindEvents();
+  }
 
   document.body.addEventListener("click", (event) => {
     const openScreen = event.target.closest("[data-open-screen]");
@@ -281,7 +296,9 @@ function renderApp() {
   renderDraftItems();
   renderLibrary();
   renderPlans();
-  renderGoogleSync();
+  if (googleSyncUI) {
+    googleSyncUI.render();
+  }
   syncEditState();
   initializeSortables();
 }
@@ -795,8 +812,8 @@ function saveState(options = {}) {
 
   persistSnapshot();
 
-  if (!options.skipRemoteSync && syncableChanged) {
-    scheduleRemoteSync();
+  if (!options.skipRemoteSync && syncableChanged && googleSyncUI) {
+    googleSyncUI.onSyncableStateChanged();
   }
 }
 
@@ -825,291 +842,19 @@ function defaultCloudState() {
   };
 }
 
-function canPrepareGoogleAuth() {
-  return Boolean(driveSyncController && typeof driveSyncController.prepare === "function");
+function applyRemoteEnvelope(envelope, syncedAt) {
+  const nextState = applySyncEnvelope(state, envelope);
+  Object.assign(state, nextState);
+  cloudState.localUpdatedAt = envelope.updatedAt || syncedAt;
+  lastSyncableSignature = getSyncableSignature(state);
 }
 
-function isGoogleAuthPrepared() {
-  if (!driveSyncController) {
-    return false;
+function markLocalSyncState(updatedAt) {
+  if (updatedAt) {
+    cloudState.localUpdatedAt = updatedAt;
   }
 
-  if (typeof driveSyncController.isPrepared === "function") {
-    return driveSyncController.isPrepared();
-  }
-
-  return true;
-}
-
-async function initializeGoogleSync() {
-  renderGoogleSync();
-
-  if (!driveSyncController || !cloudState.googleClientId) {
-    return;
-  }
-
-  try {
-    syncErrorMessage = "";
-    syncStatusMessage = "Loading Google sign-in...";
-    renderGoogleSync();
-    if (canPrepareGoogleAuth()) {
-      await driveSyncController.prepare();
-    }
-    isGoogleAuthReady = true;
-    syncStatusMessage = "Checking for an existing Google session...";
-    renderGoogleSync();
-    const profile = await driveSyncController.maybeRestoreSession();
-
-    if (!profile) {
-      syncStatusMessage = cloudState.googleAccountEmail
-        ? "Reconnect to Google to resume Drive sync."
-        : "Sign in with Google to sync this device.";
-      renderGoogleSync();
-      return;
-    }
-
-    cloudState.googleAccountEmail = profile.email || cloudState.googleAccountEmail;
-    cloudState.googleAccountName = profile.name || cloudState.googleAccountName;
-    persistSnapshot();
-    syncStatusMessage = "Connected to Google. Checking Drive for newer data...";
-    renderGoogleSync();
-    await synchronizeWithDrive({ manual: false });
-  } catch (error) {
-    isGoogleAuthReady = false;
-    syncErrorMessage = getErrorMessage(error, "Could not initialize Google Drive sync.");
-    syncStatusMessage = "Drive sync is available, but the Google session could not be restored.";
-    renderGoogleSync();
-  }
-}
-
-async function handleGoogleSignIn() {
-  if (!driveSyncController) {
-    syncErrorMessage = "Google Drive sync is not available in this build.";
-    renderGoogleSync();
-    return;
-  }
-
-  if (!cloudState.googleClientId) {
-    syncStatusMessage = "Google sign-in is not configured for this build yet.";
-    renderGoogleSync();
-    return;
-  }
-
-  if (!isGoogleAuthReady || !isGoogleAuthPrepared()) {
-    syncStatusMessage = "Google sign-in is still loading. Try again in a moment.";
-    renderGoogleSync();
-    return;
-  }
-
-  try {
-    syncErrorMessage = "";
-    syncStatusMessage = "Opening Google sign-in...";
-    renderGoogleSync();
-    const profile = await driveSyncController.signIn();
-    cloudState.googleAccountEmail = profile.email || "";
-    cloudState.googleAccountName = profile.name || "";
-    persistSnapshot();
-    syncStatusMessage = "Signed in. Syncing with Google Drive...";
-    renderGoogleSync();
-    await synchronizeWithDrive({ manual: true });
-  } catch (error) {
-    syncErrorMessage = getErrorMessage(error, "Google sign-in failed.");
-    syncStatusMessage = "Could not complete Google sign-in.";
-    renderGoogleSync();
-  }
-}
-
-async function handleGoogleSignOut() {
-  if (!driveSyncController) {
-    return;
-  }
-
-  if (syncTimer) {
-    window.clearTimeout(syncTimer);
-    syncTimer = null;
-  }
-
-  await driveSyncController.signOut();
-  cloudState.googleAccountEmail = "";
-  cloudState.googleAccountName = "";
-  syncErrorMessage = "";
-  syncStatusMessage = "Signed out of Google. Your local data is still available on this device.";
-  persistSnapshot();
-  renderGoogleSync();
-}
-
-function scheduleRemoteSync() {
-  if (!driveSyncController || !driveSyncController.isConfigured() || !driveSyncController.isSignedIn()) {
-    renderGoogleSync();
-    return;
-  }
-
-  if (syncTimer) {
-    window.clearTimeout(syncTimer);
-  }
-
-  syncStatusMessage = "Changes saved locally. Google Drive sync is queued.";
-  renderGoogleSync();
-  syncTimer = window.setTimeout(() => {
-    syncTimer = null;
-    synchronizeWithDrive({ manual: false });
-  }, 1200);
-}
-
-async function synchronizeWithDrive(options = {}) {
-  if (!driveSyncController) {
-    syncErrorMessage = "Google Drive sync is not available in this build.";
-    renderGoogleSync();
-    return;
-  }
-
-  if (!driveSyncController.isConfigured()) {
-    syncStatusMessage = "Google sign-in is not configured for this build yet.";
-    renderGoogleSync();
-    return;
-  }
-
-  if (!driveSyncController.isSignedIn()) {
-    syncStatusMessage = "Sign in with Google to sync this device with Drive.";
-    renderGoogleSync();
-    return;
-  }
-
-  if (syncInFlight) {
-    if (options.manual) {
-      syncStatusMessage = "A Google Drive sync is already in progress.";
-      renderGoogleSync();
-    }
-    return;
-  }
-
-  if (syncTimer) {
-    window.clearTimeout(syncTimer);
-    syncTimer = null;
-  }
-
-  let shouldRenderApp = false;
-
-  syncInFlight = true;
-  syncErrorMessage = "";
-  syncStatusMessage = "Syncing with Google Drive...";
-  renderGoogleSync();
-
-  try {
-    const result = await driveSyncController.syncEnvelope(getLocalSyncEnvelope(), cloudState.driveFileId);
-    const syncedAt = new Date().toISOString();
-
-    if (result.profile) {
-      cloudState.googleAccountEmail = result.profile.email || cloudState.googleAccountEmail;
-      cloudState.googleAccountName = result.profile.name || cloudState.googleAccountName;
-    }
-
-    if (result.fileId) {
-      cloudState.driveFileId = result.fileId;
-    }
-
-    cloudState.lastSyncedAt = syncedAt;
-    cloudState.lastRemoteUpdatedAt = result.remoteUpdatedAt || cloudState.lastRemoteUpdatedAt;
-
-    if (result.action === "download") {
-      const nextState = applySyncEnvelope(state, result.envelope);
-      Object.assign(state, nextState);
-      cloudState.localUpdatedAt = result.envelope.updatedAt || syncedAt;
-      lastSyncableSignature = getSyncableSignature(state);
-      syncStatusMessage = "Loaded the newest data from Google Drive.";
-      persistSnapshot();
-      shouldRenderApp = true;
-    } else if (result.action === "upload") {
-      cloudState.localUpdatedAt = result.envelope.updatedAt || cloudState.localUpdatedAt || syncedAt;
-      lastSyncableSignature = getSyncableSignature(state);
-      syncStatusMessage = "Saved the latest changes to Google Drive.";
-      persistSnapshot();
-    } else {
-      cloudState.localUpdatedAt = result.envelope.updatedAt || cloudState.localUpdatedAt || syncedAt;
-      lastSyncableSignature = getSyncableSignature(state);
-      syncStatusMessage = "Google Drive is already up to date.";
-      persistSnapshot();
-    }
-  } catch (error) {
-    syncErrorMessage = getErrorMessage(error, "Could not sync with Google Drive.");
-    syncStatusMessage = options.manual
-      ? "Google Drive sync failed."
-      : "Automatic sync paused until the next successful connection.";
-  } finally {
-    syncInFlight = false;
-    if (shouldRenderApp) {
-      renderApp();
-    } else {
-      renderGoogleSync();
-    }
-  }
-}
-
-function renderGoogleSync() {
-  const hasClientId = Boolean(cloudState.googleClientId);
-  const canStartGoogleSignIn = Boolean(hasClientId && driveSyncController && isGoogleAuthReady && isGoogleAuthPrepared());
-  const isSignedIn = Boolean(driveSyncController && driveSyncController.isSignedIn());
-  const accountLabel = cloudState.googleAccountEmail || cloudState.googleAccountName;
-  const statusText = syncErrorMessage || getGoogleSyncStatusMessage(hasClientId, isSignedIn);
-
-  googleSignInButton.disabled = !canStartGoogleSignIn || syncInFlight;
-  googleSyncNowButton.disabled = !isSignedIn || syncInFlight;
-  googleSignOutButton.disabled = !isSignedIn || syncInFlight;
-  googleSyncNowButton.classList.toggle("is-hidden", !hasClientId);
-  googleSignOutButton.classList.toggle("is-hidden", !hasClientId);
-
-  googleSyncStatus.textContent = statusText;
-  googleSyncStatus.classList.toggle("is-danger-text", Boolean(syncErrorMessage));
-  googleSyncAccount.textContent = accountLabel ? `Signed in as ${accountLabel}.` : "";
-  googleSyncAccount.classList.toggle("is-hidden", !accountLabel);
-
-  const metaParts = [];
-  if (cloudState.lastSyncedAt) {
-    metaParts.push(`Last synced ${formatSyncTimestamp(cloudState.lastSyncedAt)}.`);
-  }
-  if (cloudState.driveFileId) {
-    metaParts.push("Stored in your Google Drive app data.");
-  }
-  googleSyncMeta.textContent = metaParts.join(" ");
-  googleSyncMeta.classList.toggle("is-hidden", !metaParts.length);
-}
-
-function getGoogleSyncStatusMessage(hasClientId, isSignedIn) {
-  if (syncStatusMessage) {
-    return syncStatusMessage;
-  }
-
-  if (!hasClientId) {
-    return "Google sign-in is not configured for this build yet.";
-  }
-
-  if (!isGoogleAuthReady) {
-    return "Loading Google sign-in...";
-  }
-
-  if (!isSignedIn) {
-    return "Sign in with Google to sync this device.";
-  }
-
-  return "Google Drive sync is ready.";
-}
-
-function formatSyncTimestamp(timestamp) {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return timestamp;
-  }
-
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function getErrorMessage(error, fallback) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  lastSyncableSignature = getSyncableSignature(state);
 }
 
 function exportRitualsCsv() {
