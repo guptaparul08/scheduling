@@ -460,15 +460,53 @@ h2 {
 
 .item-list li {
   padding: 12px 14px;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
-  align-items: center;
 }
 
 .item-text {
   flex: 1;
   min-width: 0;
+}
+
+.draft-item-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.draft-item-main {
+  align-items: flex-start;
+}
+
+.draft-item-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.draft-item-label-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.draft-item-label-input:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+.item-schedule-summary {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.item-day-picker {
+  padding-left: 44px;
 }
 
 .drag-row {
@@ -685,6 +723,14 @@ h2 {
 
   .plans-entry {
     grid-template-columns: 1fr;
+  }
+
+  .draft-item-header {
+    flex-direction: column;
+  }
+
+  .item-day-picker {
+    padding-left: 0;
   }
 
   .day-picker {

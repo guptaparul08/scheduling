@@ -10,6 +10,34 @@ const createPersistedSnapshot = RitualFlowCore.createPersistedSnapshot;
 const hydratePersistedState = RitualFlowCore.hydratePersistedState;
 const createSyncEnvelope = RitualFlowCore.createSyncEnvelope;
 const applySyncEnvelope = RitualFlowCore.applySyncEnvelope;
+const normalizeDayList =
+  RitualFlowCore.normalizeDayList ||
+  function fallbackNormalizeDayList(days) {
+    if (!Array.isArray(days)) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6),
+      ),
+    ).sort((a, b) => a - b);
+  };
+const getItemScheduledDays =
+  RitualFlowCore.getItemScheduledDays ||
+  function fallbackGetItemScheduledDays(item, ritualDays) {
+    const itemDays = normalizeDayList(item && item.days);
+    return itemDays.length ? itemDays : normalizeDayList(ritualDays);
+  };
+const getRitualItemsForDay =
+  RitualFlowCore.getRitualItemsForDay ||
+  function fallbackGetRitualItemsForDay(ritual, dayIndex) {
+    if (!ritual || !Array.isArray(ritual.items)) {
+      return [];
+    }
+
+    return ritual.items.filter((item) => getItemScheduledDays(item, ritual.days).includes(dayIndex));
+  };
 const reorderItems = RitualFlowCore.reorderItems;
 const RitualFlowSync = window.RitualFlowSync || {};
 const RitualFlowGoogleSyncUI = window.RitualFlowGoogleSyncUI || {};
@@ -201,8 +229,23 @@ function bindEvents() {
     if (removeDraftIndex) {
       const index = Number(removeDraftIndex.dataset.removeDraftIndex);
       state.draftItems.splice(index, 1);
+      saveState();
       renderDraftItems();
       syncEditState();
+      initializeSortables();
+    }
+
+    const toggleDraftItemDaysMode = event.target.closest("[data-toggle-draft-item-days-mode]");
+    if (toggleDraftItemDaysMode) {
+      const index = Number(toggleDraftItemDaysMode.dataset.toggleDraftItemDaysMode);
+      toggleDraftItemDaysModeAtIndex(index);
+    }
+
+    const itemDayPill = event.target.closest("[data-draft-item-index][data-item-day-index]");
+    if (itemDayPill) {
+      const itemIndex = Number(itemDayPill.dataset.draftItemIndex);
+      const dayIndex = Number(itemDayPill.dataset.itemDayIndex);
+      toggleDraftItemDay(itemIndex, dayIndex);
     }
 
     const editButton = event.target.closest("[data-edit-ritual-id]");
@@ -274,6 +317,20 @@ function bindEvents() {
       togglePlanCompletion(event.target.dataset.planId, event.target.checked);
     }
   });
+
+  document.body.addEventListener("input", (event) => {
+    const itemLabelInput = event.target.closest("[data-draft-item-label-index]");
+    if (itemLabelInput) {
+      updateDraftItemLabel(Number(itemLabelInput.dataset.draftItemLabelIndex), itemLabelInput.value);
+    }
+  });
+
+  document.body.addEventListener("keydown", (event) => {
+    if (event.target.matches("[data-draft-item-label-index]") && event.key === "Enter") {
+      event.preventDefault();
+      event.target.blur();
+    }
+  });
 }
 
 function renderApp() {
@@ -312,7 +369,13 @@ function renderToday() {
     day: "numeric",
   });
   const dayIndex = today.getDay();
-  const ritualsForToday = state.rituals.filter((ritual) => ritual.isActive && ritual.days.includes(dayIndex));
+  const ritualsForToday = state.rituals
+    .filter((ritual) => ritual.isActive)
+    .map((ritual) => ({
+      ritual: ritual,
+      scheduledItems: getRitualItemsForDay(ritual, dayIndex),
+    }))
+    .filter((entry) => entry.scheduledItems.length);
 
   todayDate.textContent = todayLabel;
   todaySummary.textContent = `${ritualsForToday.length} ritual${ritualsForToday.length === 1 ? "" : "s"} scheduled`;
@@ -324,10 +387,10 @@ function renderToday() {
     return;
   }
 
-  ritualsForToday.forEach((ritual) => {
-    const completedCount = ritual.items.filter((item) => isItemComplete(ritual.id, item.id)).length;
-    const isExpanded = Object.prototype.hasOwnProperty.call(state.expandedRitualIds, ritual.id)
-      ? state.expandedRitualIds[ritual.id]
+  ritualsForToday.forEach((entry) => {
+    const completedCount = entry.scheduledItems.filter((item) => isItemComplete(entry.ritual.id, item.id)).length;
+    const isExpanded = Object.prototype.hasOwnProperty.call(state.expandedRitualIds, entry.ritual.id)
+      ? state.expandedRitualIds[entry.ritual.id]
       : true;
 
     const card = document.createElement("article");
@@ -335,24 +398,24 @@ function renderToday() {
     card.innerHTML = `
       <div class="ritual-card-header">
         <div>
-          <h3>${escapeHtml(ritual.name)}</h3>
+          <h3>${escapeHtml(entry.ritual.name)}</h3>
           <p class="ritual-meta">
-            ${escapeHtml(ritual.note || "No note")} · ${completedCount}/${ritual.items.length} done
+            ${escapeHtml(entry.ritual.note || "No note")} · ${completedCount}/${entry.scheduledItems.length} done
           </p>
         </div>
         <div class="ritual-actions">
-          <button class="ghost-button" data-toggle-expand-id="${ritual.id}" type="button">
+          <button class="ghost-button" data-toggle-expand-id="${entry.ritual.id}" type="button">
             ${isExpanded ? "Collapse" : "Expand"}
           </button>
         </div>
       </div>
-      ${renderRitualBody(ritual, isExpanded)}
+      ${renderRitualBody(entry.ritual, entry.scheduledItems, isExpanded)}
     `;
     todayRituals.append(card);
   });
 }
 
-function renderRitualBody(ritual, isExpanded) {
+function renderRitualBody(ritual, scheduledItems, isExpanded) {
   if (!isExpanded) {
     return "";
   }
@@ -366,14 +429,14 @@ function renderRitualBody(ritual, isExpanded) {
 
   if (state.todayView === "simple") {
     return `
-      <div class="simple-items">${ritual.items
+      <div class="simple-items">${scheduledItems
         .map((item) => `<div>${escapeHtml(item.label)}</div>`)
         .join("")}</div>
       ${footer}
     `;
   }
 
-  const checklist = ritual.items
+  const checklist = scheduledItems
     .map((item) => {
       const isComplete = isItemComplete(ritual.id, item.id);
       return `
@@ -398,14 +461,52 @@ function renderDayPicker() {
   dayPicker.innerHTML = "";
 
   DAY_LABELS.forEach((label, index) => {
-    const selected = state.draftDays.includes(index);
-    const button = document.createElement("button");
-    button.className = `day-pill${selected ? " is-selected" : ""}`;
-    button.dataset.dayIndex = String(index);
-    button.type = "button";
-    button.textContent = label;
-    dayPicker.append(button);
+    dayPicker.append(createDayPillButton(label, state.draftDays.includes(index), {
+      dayIndex: String(index),
+    }));
   });
+}
+
+function createDayPillButton(label, selected, datasetEntries) {
+  const button = document.createElement("button");
+  button.className = `day-pill${selected ? " is-selected" : ""}`;
+  button.type = "button";
+  button.textContent = label;
+
+  Object.entries(datasetEntries || {}).forEach(([key, value]) => {
+    button.dataset[key] = value;
+  });
+
+  return button;
+}
+
+function hasCustomItemDays(item) {
+  return Boolean(item && Array.isArray(item.days));
+}
+
+function createDraftItem(label, days, id) {
+  const item = {
+    id: id || generateId(),
+    label: String(label || "").trim(),
+  };
+
+  if (Array.isArray(days)) {
+    item.days = normalizeDayList(days);
+  }
+
+  return item;
+}
+
+function getDraftItemScheduleSummary(item) {
+  if (!hasCustomItemDays(item)) {
+    return "Same as ritual days";
+  }
+
+  if (!item.days.length) {
+    return "Custom days: none selected";
+  }
+
+  return `Custom days: ${item.days.map((day) => COMPACT_DAY_LABELS[day]).join(" ")}`;
 }
 
 function renderDraftItems() {
@@ -420,16 +521,49 @@ function renderDraftItems() {
 
   state.draftItems.forEach((item, index) => {
     const li = document.createElement("li");
+    li.className = "draft-item";
     li.dataset.itemId = item.id;
+    const scheduleSummary = getDraftItemScheduleSummary(item);
     li.innerHTML = `
-      <div class="drag-row">
-        <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">::</span>
-        <span class="item-text">${escapeHtml(item.label)}</span>
-      </div>
-      <div class="inline-actions">
-        <button class="text-button is-danger" data-remove-draft-index="${index}" type="button">Remove</button>
+      <div class="draft-item-header">
+        <div class="drag-row draft-item-main">
+          <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">::</span>
+          <div class="draft-item-copy">
+            <input
+              class="draft-item-label-input"
+              data-draft-item-label-index="${index}"
+              type="text"
+              value="${escapeHtml(item.label)}"
+              aria-label="Task name"
+            />
+            <span class="item-schedule-summary">${escapeHtml(scheduleSummary)}</span>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button class="ghost-button" data-toggle-draft-item-days-mode="${index}" type="button">
+            ${hasCustomItemDays(item) ? "Use ritual days" : "Choose days"}
+          </button>
+          <button class="text-button is-danger" data-remove-draft-index="${index}" type="button">Remove</button>
+        </div>
       </div>
     `;
+
+    if (hasCustomItemDays(item)) {
+      const picker = document.createElement("div");
+      picker.className = "day-picker item-day-picker";
+
+      DAY_LABELS.forEach((label, dayIndex) => {
+        picker.append(
+          createDayPillButton(label, item.days.includes(dayIndex), {
+            draftItemIndex: String(index),
+            itemDayIndex: String(dayIndex),
+          }),
+        );
+      });
+
+      li.append(picker);
+    }
+
     itemList.append(li);
   });
 }
@@ -465,6 +599,7 @@ function renderRitualSection(rituals, label) {
 
   rituals.forEach((ritual) => {
     const compactDays = ritual.days.map((day) => COMPACT_DAY_LABELS[day]).join(" ");
+    const customScheduledItems = ritual.items.filter((item) => hasCustomItemDays(item)).length;
     const card = document.createElement("article");
     card.className = "library-card";
     card.dataset.ritualId = ritual.id;
@@ -476,6 +611,11 @@ function renderRitualSection(rituals, label) {
             ${escapeHtml(ritual.note || "No note")} · ${ritual.items.length} item${ritual.items.length === 1 ? "" : "s"}
           </p>
           <p class="ritual-meta ritual-days">${compactDays || "No days selected"}</p>
+          ${
+            customScheduledItems
+              ? `<p class="ritual-meta">${customScheduledItems} item${customScheduledItems === 1 ? "" : "s"} with custom days</p>`
+              : ""
+          }
           <p class="ritual-meta">${ritual.isActive ? "Active" : "Archived"}</p>
         </div>
         <div class="library-actions">
@@ -504,19 +644,68 @@ function addDraftItem() {
     return;
   }
 
-  state.draftItems.push({ id: generateId(), label });
+  state.draftItems.push(createDraftItem(label));
   itemInput.value = "";
+  saveState();
   renderDraftItems();
+  initializeSortables();
 }
 
 function toggleDraftDay(dayIndex) {
   if (state.draftDays.includes(dayIndex)) {
     state.draftDays = state.draftDays.filter((day) => day !== dayIndex);
   } else {
-    state.draftDays = [...state.draftDays, dayIndex].sort((a, b) => a - b);
+    state.draftDays = normalizeDayList([...state.draftDays, dayIndex]);
   }
 
+  saveState();
   renderDayPicker();
+  renderDraftItems();
+}
+
+function toggleDraftItemDaysModeAtIndex(index) {
+  const item = state.draftItems[index];
+  if (!item) {
+    return;
+  }
+
+  if (hasCustomItemDays(item)) {
+    delete item.days;
+  } else {
+    item.days = normalizeDayList(state.draftDays);
+  }
+
+  saveState();
+  renderDraftItems();
+  initializeSortables();
+}
+
+function toggleDraftItemDay(index, dayIndex) {
+  const item = state.draftItems[index];
+  if (!item) {
+    return;
+  }
+
+  const nextDays = hasCustomItemDays(item) ? item.days.slice() : normalizeDayList(state.draftDays);
+  if (nextDays.includes(dayIndex)) {
+    item.days = nextDays.filter((day) => day !== dayIndex);
+  } else {
+    item.days = normalizeDayList([...nextDays, dayIndex]);
+  }
+
+  saveState();
+  renderDraftItems();
+  initializeSortables();
+}
+
+function updateDraftItemLabel(index, label) {
+  const item = state.draftItems[index];
+  if (!item) {
+    return;
+  }
+
+  item.label = String(label || "");
+  saveState();
 }
 
 function handleSubmit(event) {
@@ -526,13 +715,25 @@ function handleSubmit(event) {
     id: ritualIdInput.value || generateId(),
     name: ritualNameInput.value.trim(),
     note: ritualNoteInput.value.trim(),
-    days: [...state.draftDays],
-    items: [...state.draftItems],
+    days: normalizeDayList(state.draftDays),
+    items: state.draftItems.map((item) => createDraftItem(item.label, item.days, item.id)),
     isActive: ritualActiveInput.checked,
   };
 
   if (!ritual.name || !ritual.items.length || !ritual.days.length) {
     window.alert("Add a name, at least one checklist item, and at least one day.");
+    return;
+  }
+
+  const itemMissingLabel = ritual.items.some((item) => !item.label);
+  if (itemMissingLabel) {
+    window.alert("Each checklist item needs a task name.");
+    return;
+  }
+
+  const itemMissingDays = ritual.items.some((item) => hasCustomItemDays(item) && !item.days.length);
+  if (itemMissingDays) {
+    window.alert("Each item with custom days needs at least one day selected.");
     return;
   }
 
@@ -558,8 +759,8 @@ function populateForm(ritualId) {
   ritualNameInput.value = ritual.name;
   ritualNoteInput.value = ritual.note;
   ritualActiveInput.checked = ritual.isActive;
-  state.draftItems = ritual.items.map((item) => ({ ...item }));
-  state.draftDays = [...ritual.days];
+  state.draftItems = ritual.items.map((item) => createDraftItem(item.label, item.days, item.id));
+  state.draftDays = normalizeDayList(ritual.days);
   state.isFormOpen = true;
   state.screen = "rituals";
   saveState();
@@ -629,6 +830,10 @@ function markAllItems(ritualId, completed) {
   if (!ritual) {
     return;
   }
+  const itemsForToday = getRitualItemsForDay(ritual, new Date().getDay());
+  if (!itemsForToday.length) {
+    return;
+  }
 
   const dateKey = currentDateKey();
   if (!state.completions[dateKey]) {
@@ -638,7 +843,7 @@ function markAllItems(ritualId, completed) {
     state.completions[dateKey][ritualId] = {};
   }
 
-  ritual.items.forEach((item) => {
+  itemsForToday.forEach((item) => {
     state.completions[dateKey][ritualId][item.id] = completed;
   });
 
@@ -836,6 +1041,7 @@ function defaultCloudState() {
     googleAccountEmail: "",
     googleAccountName: "",
     driveFileId: "",
+    hasPendingSync: false,
     lastSyncedAt: "",
     lastRemoteUpdatedAt: "",
     localUpdatedAt: "",
@@ -859,13 +1065,19 @@ function markLocalSyncState(updatedAt) {
 
 function exportRitualsCsv() {
   const rows = [
-    ["name", "note", "active", "days", "items"],
+    ["name", "note", "active", "days", "items", "item_days"],
     ...state.rituals.map((ritual) => [
       ritual.name,
       ritual.note || "",
       ritual.isActive ? "yes" : "no",
       ritual.days.map((day) => DAY_LABELS[day]).join(", "),
       ritual.items.map((item) => item.label).join(" | "),
+      ritual.items
+        .map((item) => {
+          const scheduledDays = getItemScheduledDays(item, ritual.days);
+          return hasCustomItemDays(item) ? scheduledDays.map((day) => DAY_LABELS[day]).join(", ") : "inherit";
+        })
+        .join(" | "),
     ]),
   ];
 
@@ -1081,6 +1293,7 @@ function initializeSortables() {
       }
 
       state.draftItems = reorderItems(state.draftItems, event.oldIndex, event.newIndex);
+      saveState();
       renderDraftItems();
       syncEditState();
       initializeSortables();

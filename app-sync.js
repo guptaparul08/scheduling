@@ -156,7 +156,7 @@
     }
 
     async function signIn() {
-      await requestAccessToken("consent");
+      await requestAccessToken("");
       return fetchUserProfile();
     }
 
@@ -169,7 +169,7 @@
 
       try {
         await prepare();
-        await requestAccessToken("");
+        await requestAccessToken("none");
         return await fetchUserProfile();
       } catch {
         accessToken = "";

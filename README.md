@@ -5,9 +5,11 @@ Ritual Flow is a lightweight browser app for recurring rituals, daily checklists
 ## What The App Does
 
 - Tracks recurring rituals by weekday
+- Lets individual ritual items either inherit ritual days or use their own weekday schedule
 - Lets users check off ritual items for the current day
 - Separates recurring rituals from one-off plans
 - Supports CSV import/export for ritual definitions
+  `item_days` is optional on import and included on export for item-level schedules.
 - Persists data locally in the browser
 - Optionally syncs app data to the signed-in user's Google Drive `appDataFolder`
 
@@ -46,7 +48,7 @@ There are three layers involved in sync:
 1. `app.js`
    Owns the app state, local persistence, and render cycle.
 2. `app-google-sync-ui.js`
-   Owns sign-in state, sync status messaging, queued syncs, and button behavior.
+   Owns sign-in state, sync status messaging, manual Drive backup flow, and button behavior.
 3. `app-sync.js`
    Owns Google OAuth token handling and Drive file reads/writes.
 
@@ -55,6 +57,8 @@ That separation is intentional:
 - UI changes should mostly live in `app.js`
 - Google/Drive API changes should mostly live in `app-sync.js`
 - Sync workflow changes should mostly live in `app-google-sync-ui.js`
+
+Signed-in sessions still do an initial Drive check on restore so the app can pull newer remote data, but routine backups are user-initiated through `Sync now`.
 
 ## Development
 

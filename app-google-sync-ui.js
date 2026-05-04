@@ -13,7 +13,6 @@
     } = options;
 
     let isGoogleAuthReady = false;
-    let syncTimer = null;
     let syncInFlight = false;
     let syncStatusMessage = "";
     let syncErrorMessage = "";
@@ -85,7 +84,14 @@
     }
 
     function onSyncableStateChanged() {
-      scheduleRemoteSync();
+      cloudState.hasPendingSync = true;
+
+      if (driveSyncController && driveSyncController.isConfigured() && driveSyncController.isSignedIn()) {
+        syncStatusMessage = "Changes saved locally. Use Sync now when you want to back up to Google Drive.";
+      }
+
+      persistSnapshot();
+      render();
     }
 
     async function handleGoogleSignIn() {
@@ -130,7 +136,6 @@
         return;
       }
 
-      clearPendingSync();
       await driveSyncController.signOut();
       cloudState.googleAccountEmail = "";
       cloudState.googleAccountName = "";
@@ -138,21 +143,6 @@
       syncStatusMessage = "Signed out of Google. Your local data is still available on this device.";
       persistSnapshot();
       render();
-    }
-
-    function scheduleRemoteSync() {
-      if (!driveSyncController || !driveSyncController.isConfigured() || !driveSyncController.isSignedIn()) {
-        render();
-        return;
-      }
-
-      clearPendingSync();
-      syncStatusMessage = "Changes saved locally. Google Drive sync is queued.";
-      render();
-      syncTimer = window.setTimeout(function onQueuedSync() {
-        syncTimer = null;
-        synchronizeWithDrive({ manual: false });
-      }, 1200);
     }
 
     async function synchronizeWithDrive(options) {
@@ -184,8 +174,6 @@
         return;
       }
 
-      clearPendingSync();
-
       let shouldRenderApp = false;
       syncInFlight = true;
       syncErrorMessage = "";
@@ -207,6 +195,7 @@
 
         cloudState.lastSyncedAt = syncedAt;
         cloudState.lastRemoteUpdatedAt = result.remoteUpdatedAt || cloudState.lastRemoteUpdatedAt;
+        cloudState.hasPendingSync = false;
 
         if (result.action === "download") {
           applyRemoteEnvelope(result.envelope, syncedAt);
@@ -226,7 +215,7 @@
         syncErrorMessage = getErrorMessage(error, "Could not sync with Google Drive.");
         syncStatusMessage = syncOptions.manual
           ? "Google Drive sync failed."
-          : "Automatic sync paused until the next successful connection.";
+          : "Could not refresh from Google Drive right now.";
       } finally {
         syncInFlight = false;
         if (shouldRenderApp) {
@@ -265,6 +254,9 @@
       if (cloudState.lastSyncedAt) {
         metaParts.push(`Last synced ${formatSyncTimestamp(cloudState.lastSyncedAt)}.`);
       }
+      if (cloudState.hasPendingSync) {
+        metaParts.push("Local changes are waiting for a Drive backup.");
+      }
       if (cloudState.driveFileId) {
         metaParts.push("Stored in your Google Drive app data.");
       }
@@ -288,13 +280,6 @@
       return true;
     }
 
-    function clearPendingSync() {
-      if (syncTimer) {
-        window.clearTimeout(syncTimer);
-        syncTimer = null;
-      }
-    }
-
     function getStatusMessage(hasClientId, isSignedIn) {
       if (syncStatusMessage) {
         return syncStatusMessage;
@@ -310,6 +295,10 @@
 
       if (!isSignedIn) {
         return "Sign in with Google to sync this device.";
+      }
+
+      if (cloudState.hasPendingSync) {
+        return "Changes are saved locally. Use Sync now to back up to Google Drive.";
       }
 
       return "Google Drive sync is ready.";

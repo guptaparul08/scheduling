@@ -81,6 +81,31 @@ def test_parse_ritual_csv_skips_rows_missing_days_or_items():
     assert rituals[0]["name"] == "Valid"
 
 
+def test_parse_ritual_csv_supports_optional_item_day_overrides():
+    context = make_context()
+    csv_text = (
+        "name,note,active,days,items,item_days\n"
+        '"Morning","Home","yes","Mon, Tue, Wed","Tea | Journal | Stretch","inherit | Mon, Wed | Tue"\n'
+    )
+
+    context.eval(
+        """
+        var nextId = 1;
+        function testIdFactory() {
+          return "item-" + (nextId++);
+        }
+        """
+    )
+    rituals = eval_json(
+        context,
+        f"RitualFlowCore.parseRitualCsv({json.dumps(csv_text)}, testIdFactory)",
+    )
+
+    assert rituals[0]["items"][0].get("days") is None
+    assert rituals[0]["items"][1]["days"] == [1, 3]
+    assert rituals[0]["items"][2]["days"] == [2]
+
+
 def test_escape_csv_escapes_quotes():
     context = make_context()
     escaped = context.eval('RitualFlowCore.escapeCsv(\'He said "hello"\')')
@@ -133,7 +158,7 @@ def test_persisted_snapshot_splits_syncable_and_device_state():
 
     assert snapshot["syncable"] == {
         "screen": "plans",
-        "rituals": [{"id": "r1", "name": "Morning"}],
+        "rituals": [{"id": "r1", "name": "Morning", "note": "", "isActive": True, "days": [], "items": []}],
         "plans": {"backlog": [{"id": "p1"}], "thisWeek": []},
         "completions": {"2026-05-02": {"r1": {"i1": True}}},
         "todayView": "simple",
@@ -193,7 +218,7 @@ def test_hydrate_persisted_state_supports_new_snapshot_shape():
     )
 
     assert restored["screen"] == "settings"
-    assert restored["rituals"] == [{"id": "r9", "name": "Night"}]
+    assert restored["rituals"] == [{"id": "r9", "name": "Night", "note": "", "isActive": True, "days": [], "items": []}]
     assert restored["plans"]["thisWeek"] == [{"id": "p3"}]
     assert restored["themePreference"] == "dark"
     assert restored["isFormOpen"] is True
@@ -231,7 +256,7 @@ def test_hydrate_persisted_state_supports_legacy_flat_snapshot():
     )
 
     assert restored["screen"] == "plans"
-    assert restored["rituals"] == [{"id": "legacy", "name": "Legacy"}]
+    assert restored["rituals"] == [{"id": "legacy", "name": "Legacy", "note": "", "isActive": True, "days": [], "items": []}]
     assert restored["plansView"] == "this-week"
     assert restored["isFormOpen"] is True
 
@@ -287,10 +312,32 @@ def test_create_sync_envelope_and_apply_sync_envelope_round_trip():
     assert envelope["state"]["screen"] == "plans"
     assert "draftItems" not in envelope["state"]
     assert applied["screen"] == "plans"
-    assert applied["rituals"] == [{"id": "r1", "name": "Morning"}]
+    assert applied["rituals"] == [{"id": "r1", "name": "Morning", "note": "", "isActive": True, "days": [], "items": []}]
     assert applied["themePreference"] == "light"
     assert applied["isFormOpen"] is False
     assert applied["draftItems"] == []
+
+
+def test_get_ritual_items_for_day_uses_item_overrides_and_inheritance():
+    context = make_context()
+    items_for_tuesday = eval_json(
+        context,
+        """
+        RitualFlowCore.getRitualItemsForDay(
+          {
+            days: [1, 2, 3],
+            items: [
+              { id: "i1", label: "Tea" },
+              { id: "i2", label: "Journal", days: [1, 3] },
+              { id: "i3", label: "Stretch", days: [2] }
+            ]
+          },
+          2
+        )
+        """,
+    )
+
+    assert [item["label"] for item in items_for_tuesday] == ["Tea", "Stretch"]
 
 
 def test_decide_sync_direction_prefers_newer_or_missing_remote_state():

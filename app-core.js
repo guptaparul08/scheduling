@@ -14,6 +14,7 @@
     const activeIndex = headers.indexOf("active");
     const daysIndex = headers.indexOf("days");
     const itemsIndex = headers.indexOf("items");
+    const itemDaysIndex = headers.indexOf("item_days");
 
     if (nameIndex === -1 || noteIndex === -1 || activeIndex === -1 || daysIndex === -1 || itemsIndex === -1) {
       throw new Error("Missing required headers");
@@ -31,16 +32,25 @@
 
         const note = String(row[noteIndex] || "").trim();
         const activeValue = String(row[activeIndex] || "").trim().toLowerCase();
-        const days = parseDays(String(row[daysIndex] || ""));
-        const items = String(row[itemsIndex] || "")
+        const days = normalizeDayList(parseDays(String(row[daysIndex] || "")));
+        const itemLabels = String(row[itemsIndex] || "")
           .split("|")
           .map(function trimItem(item) {
             return item.trim();
           })
-          .filter(Boolean)
-          .map(function toItem(label) {
-            return { id: makeId(), label: label };
-          });
+          .filter(Boolean);
+        const itemSchedules = parseItemDaySchedules(
+          itemDaysIndex === -1 ? "" : String(row[itemDaysIndex] || ""),
+          itemLabels.length,
+        );
+        const items = itemLabels.map(function toItem(label, index) {
+          const item = { id: makeId(), label: label };
+          const schedule = itemSchedules[index];
+          if (schedule) {
+            item.days = schedule;
+          }
+          return item;
+        });
 
         if (!days.length || !items.length) {
           return null;
@@ -129,6 +139,35 @@
       });
   }
 
+  function parseItemDaySchedules(dayString, itemCount) {
+    const emptySchedules = Array.from({ length: itemCount }, function toNull() {
+      return null;
+    });
+    const rawValue = String(dayString || "").trim();
+
+    if (!rawValue) {
+      return emptySchedules;
+    }
+
+    const scheduleParts = rawValue.split("|").map(function trimSchedule(part) {
+      return part.trim();
+    });
+
+    return emptySchedules.map(function mapSchedule(_, index) {
+      return parseItemDaySchedule(scheduleParts[index] || "");
+    });
+  }
+
+  function parseItemDaySchedule(dayString) {
+    const normalized = String(dayString || "").trim().toLowerCase();
+    if (!normalized || normalized === "inherit" || normalized === "same" || normalized === "default") {
+      return null;
+    }
+
+    const parsedDays = normalizeDayList(parseDays(dayString));
+    return parsedDays.length ? parsedDays : null;
+  }
+
   function dayToIndex(day) {
     const dayMap = {
       sun: 0,
@@ -150,6 +189,22 @@
   function escapeCsv(value) {
     const stringValue = String(value == null ? "" : value);
     return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+
+  function normalizeDayList(days) {
+    if (!Array.isArray(days)) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        days.filter(function isValidDay(day) {
+          return Number.isInteger(day) && day >= 0 && day <= 6;
+        }),
+      ),
+    ).sort(function sortDays(a, b) {
+      return a - b;
+    });
   }
 
   function cloneJson(value) {
@@ -175,7 +230,7 @@
   function buildSyncableState(state) {
     return cloneJson({
       screen: state.screen,
-      rituals: state.rituals,
+      rituals: normalizeRituals(state.rituals),
       plans: state.plans,
       completions: state.completions,
       todayView: state.todayView,
@@ -205,21 +260,21 @@
   function hydratePersistedState(snapshot, baseState) {
     const seedState = cloneJson(baseState || {});
     if (!snapshot || typeof snapshot !== "object") {
-      return seedState;
+      return normalizeHydratedState(seedState);
     }
 
     if (!snapshot.syncable && !snapshot.device) {
-      return {
+      return normalizeHydratedState({
         ...seedState,
         ...cloneJson(snapshot),
-      };
+      });
     }
 
-    return {
+    return normalizeHydratedState({
       ...seedState,
       ...cloneJson(snapshot.syncable || {}),
       ...cloneJson(snapshot.device || {}),
-    };
+    });
   }
 
   function createSyncEnvelope(state, updatedAt) {
@@ -233,13 +288,106 @@
   function applySyncEnvelope(baseState, envelope) {
     const seedState = cloneJson(baseState || {});
     if (!envelope || typeof envelope !== "object" || !envelope.state || typeof envelope.state !== "object") {
-      return seedState;
+      return normalizeHydratedState(seedState);
     }
 
-    return {
+    return normalizeHydratedState({
       ...seedState,
       ...cloneJson(envelope.state),
+    });
+  }
+
+  function normalizeHydratedState(state) {
+    const nextState = {
+      ...state,
     };
+
+    nextState.rituals = normalizeRituals(nextState.rituals);
+    return nextState;
+  }
+
+  function normalizeRituals(rituals) {
+    if (!Array.isArray(rituals)) {
+      return [];
+    }
+
+    return rituals
+      .map(function normalizeRitual(ritual) {
+        if (!ritual || typeof ritual !== "object") {
+          return null;
+        }
+
+        const nextRitual = cloneJson(ritual);
+        nextRitual.id = nextRitual.id || defaultIdFactory();
+        nextRitual.name = String(nextRitual.name || "").trim();
+        nextRitual.note = String(nextRitual.note || "").trim();
+        nextRitual.isActive = nextRitual.isActive !== false;
+        nextRitual.days = normalizeDayList(nextRitual.days);
+        nextRitual.items = normalizeRitualItems(nextRitual.items);
+        return nextRitual;
+      })
+      .filter(Boolean);
+  }
+
+  function normalizeRitualItems(items) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    return items
+      .map(function normalizeItem(item) {
+        if (typeof item === "string") {
+          const label = item.trim();
+          if (!label) {
+            return null;
+          }
+
+          return {
+            id: defaultIdFactory(),
+            label: label,
+          };
+        }
+
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+
+        const nextItem = cloneJson(item);
+        nextItem.id = nextItem.id || defaultIdFactory();
+        nextItem.label = String(nextItem.label || "").trim();
+        if (!nextItem.label) {
+          return null;
+        }
+
+        const itemDays = normalizeDayList(nextItem.days);
+        if (itemDays.length) {
+          nextItem.days = itemDays;
+        } else {
+          delete nextItem.days;
+        }
+
+        return nextItem;
+      })
+      .filter(Boolean);
+  }
+
+  function getItemScheduledDays(item, ritualDays) {
+    const itemDays = normalizeDayList(item && item.days);
+    if (itemDays.length) {
+      return itemDays;
+    }
+
+    return normalizeDayList(ritualDays);
+  }
+
+  function getRitualItemsForDay(ritual, dayIndex) {
+    if (!ritual || !Array.isArray(ritual.items)) {
+      return [];
+    }
+
+    return ritual.items.filter(function itemMatchesDay(item) {
+      return getItemScheduledDays(item, ritual.days).includes(dayIndex);
+    });
   }
 
   function decideSyncDirection(localEnvelope, remoteEnvelope) {
@@ -304,6 +452,7 @@
     parseDays: parseDays,
     dayToIndex: dayToIndex,
     escapeCsv: escapeCsv,
+    normalizeDayList: normalizeDayList,
     buildSyncableState: buildSyncableState,
     buildDeviceState: buildDeviceState,
     createPersistedSnapshot: createPersistedSnapshot,
@@ -311,6 +460,8 @@
     createSyncEnvelope: createSyncEnvelope,
     applySyncEnvelope: applySyncEnvelope,
     decideSyncDirection: decideSyncDirection,
+    getItemScheduledDays: getItemScheduledDays,
+    getRitualItemsForDay: getRitualItemsForDay,
     reorderItems: reorderItems,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);
