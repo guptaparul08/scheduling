@@ -175,6 +175,42 @@ def test_persisted_snapshot_splits_syncable_and_device_state():
     assert snapshot["cloud"]["googleClientId"] == "client-id.apps.googleusercontent.com"
 
 
+def test_build_structure_and_progress_state_split_sync_concerns():
+    context = make_context()
+    structure_state = eval_json(
+        context,
+        """
+        RitualFlowCore.buildStructureState({
+          screen: "plans",
+          rituals: [{ id: "r1", name: "Morning" }],
+          plans: { backlog: [{ id: "p1" }], thisWeek: [] },
+          completions: { "2026-05-02": { r1: { i1: true } } },
+          todayView: "simple",
+          plansView: "this-week",
+          themePreference: "dark"
+        })
+        """,
+    )
+    progress_state = eval_json(
+        context,
+        """
+        RitualFlowCore.buildProgressState({
+          screen: "plans",
+          rituals: [{ id: "r1", name: "Morning" }],
+          plans: { backlog: [{ id: "p1" }], thisWeek: [] },
+          completions: { "2026-05-02": { r1: { i1: true } } },
+          todayView: "simple",
+          plansView: "this-week",
+          themePreference: "dark"
+        })
+        """,
+    )
+
+    assert "completions" not in structure_state
+    assert structure_state["rituals"] == [{"id": "r1", "name": "Morning", "note": "", "isActive": True, "days": [], "items": []}]
+    assert progress_state == {"completions": {"2026-05-02": {"r1": {"i1": True}}}}
+
+
 def test_hydrate_persisted_state_supports_new_snapshot_shape():
     context = make_context()
     restored = eval_json(
@@ -316,6 +352,73 @@ def test_create_sync_envelope_and_apply_sync_envelope_round_trip():
     assert applied["themePreference"] == "light"
     assert applied["isFormOpen"] is False
     assert applied["draftItems"] == []
+
+
+def test_structure_and_progress_sync_envelopes_apply_only_their_slice():
+    context = make_context()
+    structure_applied = eval_json(
+        context,
+        """
+        RitualFlowCore.applyStructureSyncEnvelope(
+          {
+            screen: "today",
+            rituals: [{ id: "local", name: "Local" }],
+            plans: { backlog: [], thisWeek: [] },
+            completions: { "2026-05-02": { local: { i1: true } } },
+            todayView: "checklist",
+            plansView: "backlog",
+            themePreference: "system"
+          },
+          {
+            updatedAt: "2026-05-03T00:00:00.000Z",
+            state: {
+              screen: "plans",
+              rituals: [{ id: "remote", name: "Remote" }],
+              plans: { backlog: [{ id: "p1" }], thisWeek: [] },
+              completions: { "2026-05-03": { remote: { i2: true } } },
+              todayView: "simple",
+              plansView: "this-week",
+              themePreference: "dark"
+            }
+          }
+        )
+        """,
+    )
+    progress_applied = eval_json(
+        context,
+        """
+        RitualFlowCore.applyProgressSyncEnvelope(
+          {
+            screen: "today",
+            rituals: [{ id: "local", name: "Local" }],
+            plans: { backlog: [], thisWeek: [] },
+            completions: { "2026-05-02": { local: { i1: true } } },
+            todayView: "checklist",
+            plansView: "backlog",
+            themePreference: "system"
+          },
+          {
+            updatedAt: "2026-05-03T00:00:00.000Z",
+            state: {
+              screen: "plans",
+              rituals: [{ id: "remote", name: "Remote" }],
+              plans: { backlog: [{ id: "p1" }], thisWeek: [] },
+              completions: { "2026-05-03": { remote: { i2: true } } },
+              todayView: "simple",
+              plansView: "this-week",
+              themePreference: "dark"
+            }
+          }
+        )
+        """,
+    )
+
+    assert structure_applied["screen"] == "plans"
+    assert structure_applied["rituals"] == [{"id": "remote", "name": "Remote", "note": "", "isActive": True, "days": [], "items": []}]
+    assert structure_applied["completions"] == {"2026-05-02": {"local": {"i1": True}}}
+    assert progress_applied["screen"] == "today"
+    assert progress_applied["rituals"] == [{"id": "local", "name": "Local", "note": "", "isActive": True, "days": [], "items": []}]
+    assert progress_applied["completions"] == {"2026-05-03": {"remote": {"i2": True}}}
 
 
 def test_get_ritual_items_for_day_uses_item_overrides_and_inheritance():

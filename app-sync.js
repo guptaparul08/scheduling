@@ -5,7 +5,9 @@
     "profile",
     "https://www.googleapis.com/auth/drive.appdata",
   ].join(" ");
-  const DRIVE_FILE_NAME = "ritual-flow-state.json";
+  const STRUCTURE_FILE_NAME = "ritual-flow-state.json";
+  const PROGRESS_FILE_NAME = "ritual-flow-progress.json";
+  const DRIVE_FILE_NAME = STRUCTURE_FILE_NAME;
 
   let googleScriptPromise = null;
 
@@ -188,26 +190,55 @@
     }
 
     async function syncEnvelope(localEnvelope, existingFileId) {
+      return syncFileEnvelope(localEnvelope, {
+        existingFileId: existingFileId,
+        fileName: STRUCTURE_FILE_NAME,
+      });
+    }
+
+    async function syncFileEnvelope(localEnvelope, options) {
       if (!accessToken) {
         throw new Error("Sign in with Google before syncing.");
       }
 
-      const remoteFile = await findDriveFile(existingFileId);
-      const remoteEnvelope = remoteFile ? await downloadFile(remoteFile.id) : null;
+      const syncOptions = options || {};
+      const fileName = String(syncOptions.fileName || STRUCTURE_FILE_NAME);
+      const fallbackFileNames = Array.isArray(syncOptions.fallbackFileNames) ? syncOptions.fallbackFileNames : [];
+      const primaryFile = await findDriveFile(syncOptions.existingFileId, fileName);
+      let remoteFile = primaryFile;
+      let remoteEnvelope = remoteFile ? await downloadFile(remoteFile.id) : null;
+
+      if (!remoteFile && fallbackFileNames.length) {
+        for (const fallbackFileName of fallbackFileNames) {
+          const fallbackFile = await findDriveFile("", fallbackFileName);
+          if (!fallbackFile) {
+            continue;
+          }
+
+          remoteFile = fallbackFile;
+          remoteEnvelope = await downloadFile(fallbackFile.id);
+          break;
+        }
+      }
+
       const direction = globalScope.RitualFlowCore.decideSyncDirection(localEnvelope, remoteEnvelope);
 
       if (direction === "download" && remoteFile && remoteEnvelope) {
         return {
           action: "download",
           envelope: remoteEnvelope,
-          fileId: remoteFile.id,
+          fileId: primaryFile ? primaryFile.id : syncOptions.existingFileId || "",
           remoteUpdatedAt: remoteFile.modifiedTime || remoteEnvelope.updatedAt || "",
           profile: getProfile(),
         };
       }
 
       if (direction === "upload") {
-        const uploaded = await uploadFile(localEnvelope, remoteFile ? remoteFile.id : existingFileId);
+        const uploaded = await uploadFile(
+          localEnvelope,
+          primaryFile ? primaryFile.id : syncOptions.existingFileId,
+          fileName,
+        );
         return {
           action: "upload",
           envelope: localEnvelope,
@@ -220,7 +251,7 @@
       return {
         action: "noop",
         envelope: remoteEnvelope || localEnvelope,
-        fileId: remoteFile ? remoteFile.id : existingFileId || "",
+        fileId: primaryFile ? primaryFile.id : syncOptions.existingFileId || "",
         remoteUpdatedAt: remoteFile
           ? remoteFile.modifiedTime || (remoteEnvelope && remoteEnvelope.updatedAt) || ""
           : localEnvelope.updatedAt || "",
@@ -228,7 +259,7 @@
       };
     }
 
-    async function findDriveFile(existingFileId) {
+    async function findDriveFile(existingFileId, fileName) {
       if (existingFileId) {
         const metadata = await fetchDriveMetadata(existingFileId);
         if (metadata) {
@@ -236,7 +267,7 @@
         }
       }
 
-      const query = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
+      const query = encodeURIComponent(`name='${String(fileName || STRUCTURE_FILE_NAME)}' and trashed=false`);
       const response = await fetch(
         `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&q=${query}`,
         {
@@ -292,10 +323,11 @@
       return response.json();
     }
 
-    async function uploadFile(envelope, fileId) {
+    async function uploadFile(envelope, fileId, fileName) {
+      const normalizedFileName = String(fileName || STRUCTURE_FILE_NAME);
       const metadata = fileId
-        ? { name: DRIVE_FILE_NAME }
-        : { name: DRIVE_FILE_NAME, parents: ["appDataFolder"] };
+        ? { name: normalizedFileName }
+        : { name: normalizedFileName, parents: ["appDataFolder"] };
       const url = fileId
         ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=multipart&fields=id,modifiedTime`
         : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime";
@@ -330,6 +362,8 @@
 
     return {
       DRIVE_FILE_NAME,
+      STRUCTURE_FILE_NAME,
+      PROGRESS_FILE_NAME,
       GOOGLE_SCOPES,
       setClientId,
       getClientId,
@@ -342,6 +376,7 @@
       maybeRestoreSession,
       signOut,
       syncEnvelope,
+      syncFileEnvelope,
     };
   }
 
@@ -367,6 +402,8 @@
   globalScope.RitualFlowSync = {
     GOOGLE_SCOPES,
     DRIVE_FILE_NAME,
+    STRUCTURE_FILE_NAME,
+    PROGRESS_FILE_NAME,
     createDriveSyncController,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

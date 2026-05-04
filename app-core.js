@@ -229,14 +229,17 @@
 
   function buildSyncableState(state) {
     return cloneJson({
-      screen: state.screen,
-      rituals: normalizeRituals(state.rituals),
-      plans: state.plans,
-      completions: state.completions,
-      todayView: state.todayView,
-      plansView: state.plansView,
-      themePreference: state.themePreference,
+      ...buildStructureState(state),
+      ...buildProgressState(state),
     });
+  }
+
+  function buildStructureState(state) {
+    return cloneJson(projectStructureState(state || {}));
+  }
+
+  function buildProgressState(state) {
+    return cloneJson(projectProgressState(state || {}));
   }
 
   function buildDeviceState(state) {
@@ -285,6 +288,22 @@
     };
   }
 
+  function createStructureSyncEnvelope(state, updatedAt) {
+    return {
+      schemaVersion: 1,
+      updatedAt: normalizeTimestamp(updatedAt) || new Date().toISOString(),
+      state: buildStructureState(state),
+    };
+  }
+
+  function createProgressSyncEnvelope(state, updatedAt) {
+    return {
+      schemaVersion: 1,
+      updatedAt: normalizeTimestamp(updatedAt) || new Date().toISOString(),
+      state: buildProgressState(state),
+    };
+  }
+
   function applySyncEnvelope(baseState, envelope) {
     const seedState = cloneJson(baseState || {});
     if (!envelope || typeof envelope !== "object" || !envelope.state || typeof envelope.state !== "object") {
@@ -297,6 +316,30 @@
     });
   }
 
+  function applyStructureSyncEnvelope(baseState, envelope) {
+    const seedState = cloneJson(baseState || {});
+    if (!envelope || typeof envelope !== "object" || !envelope.state || typeof envelope.state !== "object") {
+      return normalizeHydratedState(seedState);
+    }
+
+    return normalizeHydratedState({
+      ...seedState,
+      ...projectStructureState(envelope.state),
+    });
+  }
+
+  function applyProgressSyncEnvelope(baseState, envelope) {
+    const seedState = cloneJson(baseState || {});
+    if (!envelope || typeof envelope !== "object" || !envelope.state || typeof envelope.state !== "object") {
+      return normalizeHydratedState(seedState);
+    }
+
+    return normalizeHydratedState({
+      ...seedState,
+      ...projectProgressState(envelope.state),
+    });
+  }
+
   function normalizeHydratedState(state) {
     const nextState = {
       ...state,
@@ -304,6 +347,25 @@
 
     nextState.rituals = normalizeRituals(nextState.rituals);
     return nextState;
+  }
+
+  function projectStructureState(state) {
+    const source = state || {};
+    return {
+      screen: source.screen,
+      rituals: normalizeRituals(source.rituals),
+      plans: cloneJson(source.plans || {}),
+      todayView: source.todayView,
+      plansView: source.plansView,
+      themePreference: source.themePreference,
+    };
+  }
+
+  function projectProgressState(state) {
+    const source = state || {};
+    return {
+      completions: cloneJson(source.completions || {}),
+    };
   }
 
   function normalizeRituals(rituals) {
@@ -454,11 +516,17 @@
     escapeCsv: escapeCsv,
     normalizeDayList: normalizeDayList,
     buildSyncableState: buildSyncableState,
+    buildStructureState: buildStructureState,
+    buildProgressState: buildProgressState,
     buildDeviceState: buildDeviceState,
     createPersistedSnapshot: createPersistedSnapshot,
     hydratePersistedState: hydratePersistedState,
     createSyncEnvelope: createSyncEnvelope,
+    createStructureSyncEnvelope: createStructureSyncEnvelope,
+    createProgressSyncEnvelope: createProgressSyncEnvelope,
     applySyncEnvelope: applySyncEnvelope,
+    applyStructureSyncEnvelope: applyStructureSyncEnvelope,
+    applyProgressSyncEnvelope: applyProgressSyncEnvelope,
     decideSyncDirection: decideSyncDirection,
     getItemScheduledDays: getItemScheduledDays,
     getRitualItemsForDay: getRitualItemsForDay,

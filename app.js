@@ -5,11 +5,43 @@ const COMPACT_DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const RitualFlowCore = window.RitualFlowCore || {};
 const parseRitualCsv = RitualFlowCore.parseRitualCsv;
 const escapeCsv = RitualFlowCore.escapeCsv;
+const buildStructureState = RitualFlowCore.buildStructureState || function fallbackBuildStructureState(sourceState) {
+  return {
+    screen: sourceState.screen,
+    rituals: sourceState.rituals,
+    plans: sourceState.plans,
+    todayView: sourceState.todayView,
+    plansView: sourceState.plansView,
+    themePreference: sourceState.themePreference,
+  };
+};
+const buildProgressState = RitualFlowCore.buildProgressState || function fallbackBuildProgressState(sourceState) {
+  return {
+    completions: sourceState.completions,
+  };
+};
 const buildSyncableState = RitualFlowCore.buildSyncableState;
 const createPersistedSnapshot = RitualFlowCore.createPersistedSnapshot;
 const hydratePersistedState = RitualFlowCore.hydratePersistedState;
-const createSyncEnvelope = RitualFlowCore.createSyncEnvelope;
-const applySyncEnvelope = RitualFlowCore.applySyncEnvelope;
+const createStructureSyncEnvelope =
+  RitualFlowCore.createStructureSyncEnvelope || RitualFlowCore.createSyncEnvelope;
+const createProgressSyncEnvelope =
+  RitualFlowCore.createProgressSyncEnvelope || function fallbackCreateProgressSyncEnvelope(sourceState, updatedAt) {
+    return {
+      schemaVersion: 1,
+      updatedAt: updatedAt || new Date().toISOString(),
+      state: buildProgressState(sourceState),
+    };
+  };
+const applyStructureSyncEnvelope =
+  RitualFlowCore.applyStructureSyncEnvelope || RitualFlowCore.applySyncEnvelope;
+const applyProgressSyncEnvelope =
+  RitualFlowCore.applyProgressSyncEnvelope || function fallbackApplyProgressSyncEnvelope(baseState, envelope) {
+    return {
+      ...baseState,
+      completions: envelope && envelope.state && envelope.state.completions ? envelope.state.completions : {},
+    };
+  };
 const normalizeDayList =
   RitualFlowCore.normalizeDayList ||
   function fallbackNormalizeDayList(days) {
@@ -93,7 +125,8 @@ let ritualLibrarySortable = null;
 let draftItemSortable = null;
 let plansSortable = null;
 let activeMenuRitualId = null;
-let lastSyncableSignature = getSyncableSignature(state);
+let lastStructureSignature = getStructureSignature(state);
+let lastProgressSignature = getProgressSignature(state);
 const googleSyncUI =
   typeof RitualFlowGoogleSyncUI.createController === "function"
     ? RitualFlowGoogleSyncUI.createController({
@@ -110,9 +143,12 @@ const googleSyncUI =
         },
         persistSnapshot: persistSnapshot,
         renderApp: renderApp,
-        getLocalSyncEnvelope: getLocalSyncEnvelope,
-        applyRemoteEnvelope: applyRemoteEnvelope,
-        markLocalSyncState: markLocalSyncState,
+        getLocalStructureEnvelope: getLocalStructureEnvelope,
+        getLocalProgressEnvelope: getLocalProgressEnvelope,
+        applyRemoteStructureEnvelope: applyRemoteStructureEnvelope,
+        applyRemoteProgressEnvelope: applyRemoteProgressEnvelope,
+        markLocalStructureSyncState: markLocalStructureSyncState,
+        markLocalProgressSyncState: markLocalProgressSyncState,
       })
     : null;
 
@@ -991,10 +1027,7 @@ function loadPersistedSnapshot() {
     const parsed = JSON.parse(raw);
     return {
       state: hydratePersistedState(parsed, defaultState()),
-      cloud: {
-        ...defaultCloudState(),
-        ...(parsed.cloud || {}),
-      },
+      cloud: normalizeCloudState(parsed.cloud || {}),
     };
   } catch {
     return {
@@ -1005,20 +1038,35 @@ function loadPersistedSnapshot() {
 }
 
 function saveState(options = {}) {
-  const nextSyncableSignature = getSyncableSignature(state);
-  const syncableChanged = nextSyncableSignature !== lastSyncableSignature;
+  const nextStructureSignature = getStructureSignature(state);
+  const nextProgressSignature = getProgressSignature(state);
+  const structureChanged = nextStructureSignature !== lastStructureSignature;
+  const progressChanged = nextProgressSignature !== lastProgressSignature;
 
-  if (syncableChanged) {
-    lastSyncableSignature = nextSyncableSignature;
+  if (structureChanged) {
+    lastStructureSignature = nextStructureSignature;
     if (!options.preserveLocalUpdatedAt) {
-      cloudState.localUpdatedAt = new Date().toISOString();
+      cloudState.structureLocalUpdatedAt = new Date().toISOString();
+    }
+  }
+
+  if (progressChanged) {
+    lastProgressSignature = nextProgressSignature;
+    if (!options.preserveLocalUpdatedAt) {
+      cloudState.progressLocalUpdatedAt = new Date().toISOString();
     }
   }
 
   persistSnapshot();
 
-  if (!options.skipRemoteSync && syncableChanged && googleSyncUI) {
-    googleSyncUI.onSyncableStateChanged();
+  if (!options.skipRemoteSync && googleSyncUI) {
+    if (structureChanged) {
+      googleSyncUI.onStructureStateChanged();
+    }
+
+    if (progressChanged) {
+      googleSyncUI.onProgressStateChanged();
+    }
   }
 }
 
@@ -1027,12 +1075,24 @@ function persistSnapshot() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
 }
 
+function getStructureSignature(sourceState) {
+  return JSON.stringify(buildStructureState(sourceState));
+}
+
+function getProgressSignature(sourceState) {
+  return JSON.stringify(buildProgressState(sourceState));
+}
+
 function getSyncableSignature(sourceState) {
   return JSON.stringify(buildSyncableState(sourceState));
 }
 
-function getLocalSyncEnvelope() {
-  return createSyncEnvelope(state, cloudState.localUpdatedAt || "1970-01-01T00:00:00.000Z");
+function getLocalStructureEnvelope() {
+  return createStructureSyncEnvelope(state, cloudState.structureLocalUpdatedAt || "1970-01-01T00:00:00.000Z");
+}
+
+function getLocalProgressEnvelope() {
+  return createProgressSyncEnvelope(state, cloudState.progressLocalUpdatedAt || "1970-01-01T00:00:00.000Z");
 }
 
 function defaultCloudState() {
@@ -1040,27 +1100,81 @@ function defaultCloudState() {
     googleClientId: GOOGLE_CLIENT_ID,
     googleAccountEmail: "",
     googleAccountName: "",
-    driveFileId: "",
-    hasPendingSync: false,
-    lastSyncedAt: "",
-    lastRemoteUpdatedAt: "",
-    localUpdatedAt: "",
+    structureFileId: "",
+    progressFileId: "",
+    hasPendingStructureSync: false,
+    hasPendingProgressSync: false,
+    lastStructureSyncedAt: "",
+    lastProgressSyncedAt: "",
+    lastStructureRemoteUpdatedAt: "",
+    lastProgressRemoteUpdatedAt: "",
+    structureLocalUpdatedAt: "",
+    progressLocalUpdatedAt: "",
   };
 }
 
-function applyRemoteEnvelope(envelope, syncedAt) {
-  const nextState = applySyncEnvelope(state, envelope);
-  Object.assign(state, nextState);
-  cloudState.localUpdatedAt = envelope.updatedAt || syncedAt;
-  lastSyncableSignature = getSyncableSignature(state);
-}
+function normalizeCloudState(rawCloud) {
+  const nextCloudState = {
+    ...defaultCloudState(),
+    ...(rawCloud || {}),
+  };
 
-function markLocalSyncState(updatedAt) {
-  if (updatedAt) {
-    cloudState.localUpdatedAt = updatedAt;
+  if (!nextCloudState.structureFileId && nextCloudState.driveFileId) {
+    nextCloudState.structureFileId = nextCloudState.driveFileId;
   }
 
-  lastSyncableSignature = getSyncableSignature(state);
+  if (!nextCloudState.lastStructureSyncedAt && nextCloudState.lastSyncedAt) {
+    nextCloudState.lastStructureSyncedAt = nextCloudState.lastSyncedAt;
+  }
+
+  if (!nextCloudState.lastStructureRemoteUpdatedAt && nextCloudState.lastRemoteUpdatedAt) {
+    nextCloudState.lastStructureRemoteUpdatedAt = nextCloudState.lastRemoteUpdatedAt;
+  }
+
+  if (!nextCloudState.structureLocalUpdatedAt && nextCloudState.localUpdatedAt) {
+    nextCloudState.structureLocalUpdatedAt = nextCloudState.localUpdatedAt;
+  }
+
+  if (!nextCloudState.progressLocalUpdatedAt && nextCloudState.localUpdatedAt) {
+    nextCloudState.progressLocalUpdatedAt = nextCloudState.localUpdatedAt;
+  }
+
+  return nextCloudState;
+}
+
+function applyRemoteStructureEnvelope(envelope, syncedAt) {
+  const nextState = applyStructureSyncEnvelope(state, envelope);
+  Object.assign(state, nextState);
+  cloudState.structureLocalUpdatedAt = envelope.updatedAt || syncedAt;
+  cloudState.hasPendingStructureSync = false;
+  lastStructureSignature = getStructureSignature(state);
+  lastProgressSignature = getProgressSignature(state);
+}
+
+function applyRemoteProgressEnvelope(envelope, syncedAt) {
+  const nextState = applyProgressSyncEnvelope(state, envelope);
+  Object.assign(state, nextState);
+  cloudState.progressLocalUpdatedAt = envelope.updatedAt || syncedAt;
+  cloudState.hasPendingProgressSync = false;
+  lastProgressSignature = getProgressSignature(state);
+}
+
+function markLocalStructureSyncState(updatedAt) {
+  if (updatedAt) {
+    cloudState.structureLocalUpdatedAt = updatedAt;
+  }
+
+  cloudState.hasPendingStructureSync = false;
+  lastStructureSignature = getStructureSignature(state);
+}
+
+function markLocalProgressSyncState(updatedAt) {
+  if (updatedAt) {
+    cloudState.progressLocalUpdatedAt = updatedAt;
+  }
+
+  cloudState.hasPendingProgressSync = false;
+  lastProgressSignature = getProgressSignature(state);
 }
 
 function exportRitualsCsv() {
@@ -1329,7 +1443,13 @@ function seedDemoRituals() {
     return;
   }
 
-  if (cloudState.googleClientId || cloudState.googleAccountEmail || cloudState.lastSyncedAt) {
+  if (
+    cloudState.googleAccountEmail ||
+    cloudState.structureFileId ||
+    cloudState.progressFileId ||
+    cloudState.lastStructureSyncedAt ||
+    cloudState.lastProgressSyncedAt
+  ) {
     return;
   }
 
