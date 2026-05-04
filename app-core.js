@@ -455,6 +455,53 @@
     });
   }
 
+  function reorderItemsWithinGroup(items, movedId, newIndex, getGroupValue) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    if (typeof getGroupValue !== "function") {
+      return items.slice();
+    }
+
+    const sourceItems = items.slice();
+    const movedItem = sourceItems.find(function findMovedItem(item) {
+      return item && item.id === movedId;
+    });
+    if (!movedItem) {
+      return sourceItems;
+    }
+
+    const targetGroupValue = getGroupValue(movedItem);
+    const groupedItems = sourceItems.filter(function itemMatchesGroup(item) {
+      return item && getGroupValue(item) === targetGroupValue;
+    });
+    const oldGroupIndex = groupedItems.findIndex(function findOldIndex(item) {
+      return item.id === movedId;
+    });
+    if (oldGroupIndex === -1) {
+      return sourceItems;
+    }
+
+    const clampedNewIndex = Math.max(0, Math.min(Number(newIndex) || 0, groupedItems.length - 1));
+    if (oldGroupIndex === clampedNewIndex) {
+      return sourceItems;
+    }
+
+    const reorderedGroupItems = reorderItems(groupedItems, oldGroupIndex, clampedNewIndex);
+    let groupCursor = 0;
+
+    return sourceItems.map(function mapGroupedItem(item) {
+      if (item && getGroupValue(item) === targetGroupValue) {
+        const nextItem = reorderedGroupItems[groupCursor];
+        groupCursor += 1;
+        return nextItem;
+      }
+
+      return item;
+    });
+  }
+
   function decideSyncDirection(localEnvelope, remoteEnvelope) {
     const hasLocal = hasSyncState(localEnvelope);
     const hasRemote = hasSyncState(remoteEnvelope);
@@ -559,5 +606,6 @@
     getItemScheduledDays: getItemScheduledDays,
     getRitualItemsForDay: getRitualItemsForDay,
     reorderItems: reorderItems,
+    reorderItemsWithinGroup: reorderItemsWithinGroup,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

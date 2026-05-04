@@ -651,6 +651,12 @@ h2 {
   margin: 6px 0 0;
 }
 
+.ritual-section,
+.ritual-section-list {
+  display: grid;
+  gap: 14px;
+}
+
 .is-hidden {
   display: none;
 }

@@ -128,6 +128,30 @@ def test_reorder_items_moves_item_without_mutating_source():
     assert original == ["a", "b", "c", "d"]
 
 
+def test_reorder_items_within_group_preserves_other_groups():
+    context = make_context()
+    reordered = eval_json(
+        context,
+        """
+        RitualFlowCore.reorderItemsWithinGroup(
+          [
+            { id: "a", status: "active" },
+            { id: "b", status: "archived" },
+            { id: "c", status: "active" },
+            { id: "d", status: "active" }
+          ],
+          "d",
+          1,
+          function(item) {
+            return item.status;
+          }
+        )
+        """,
+    )
+
+    assert [item["id"] for item in reordered] == ["a", "b", "d", "c"]
+
+
 def test_persisted_snapshot_splits_syncable_and_device_state():
     context = make_context()
     snapshot = eval_json(

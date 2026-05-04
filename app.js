@@ -72,6 +72,44 @@ const getRitualItemsForDay =
     return ritual.items.filter((item) => getItemScheduledDays(item, ritual.days).includes(dayIndex));
   };
 const reorderItems = RitualFlowCore.reorderItems;
+const reorderItemsWithinGroup =
+  RitualFlowCore.reorderItemsWithinGroup ||
+  function fallbackReorderItemsWithinGroup(items, movedId, newIndex, getGroupValue) {
+    if (!Array.isArray(items) || typeof getGroupValue !== "function") {
+      return Array.isArray(items) ? items.slice() : [];
+    }
+
+    const sourceItems = items.slice();
+    const movedItem = sourceItems.find((item) => item && item.id === movedId);
+    if (!movedItem) {
+      return sourceItems;
+    }
+
+    const targetGroupValue = getGroupValue(movedItem);
+    const groupedItems = sourceItems.filter((item) => item && getGroupValue(item) === targetGroupValue);
+    const oldGroupIndex = groupedItems.findIndex((item) => item.id === movedId);
+    if (oldGroupIndex === -1) {
+      return sourceItems;
+    }
+
+    const clampedNewIndex = Math.max(0, Math.min(Number(newIndex) || 0, groupedItems.length - 1));
+    if (oldGroupIndex === clampedNewIndex) {
+      return sourceItems;
+    }
+
+    const reorderedGroupItems = reorderItems(groupedItems, oldGroupIndex, clampedNewIndex);
+    let groupCursor = 0;
+
+    return sourceItems.map((item) => {
+      if (item && getGroupValue(item) === targetGroupValue) {
+        const nextItem = reorderedGroupItems[groupCursor];
+        groupCursor += 1;
+        return nextItem;
+      }
+
+      return item;
+    });
+  };
 const getEnvelopeVersion =
   RitualFlowCore.getEnvelopeVersion ||
   function fallbackGetEnvelopeVersion(envelope) {
@@ -132,7 +170,7 @@ const googleSyncAccount = document.querySelector("#google-sync-account");
 const googleSyncMeta = document.querySelector("#google-sync-meta");
 const themeMediaQuery =
   typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-let ritualLibrarySortable = null;
+let ritualLibrarySortables = [];
 let draftItemSortable = null;
 let plansSortable = null;
 let activeMenuRitualId = null;
@@ -639,10 +677,18 @@ function renderLibrary() {
 }
 
 function renderRitualSection(rituals, label) {
+  const section = document.createElement("section");
+  section.className = "ritual-section";
+
   const heading = document.createElement("p");
   heading.className = "panel-label section-label";
   heading.textContent = label;
-  ritualLibrary.append(heading);
+  section.append(heading);
+
+  const list = document.createElement("div");
+  list.className = "ritual-section-list";
+  list.dataset.ritualList = label === "Archived" ? "archived" : "active";
+  section.append(list);
 
   rituals.forEach((ritual) => {
     const compactDays = ritual.days.map((day) => COMPACT_DAY_LABELS[day]).join(" ");
@@ -680,8 +726,10 @@ function renderRitualSection(rituals, label) {
         </div>
       </div>
     `;
-    ritualLibrary.append(card);
+    list.append(card);
   });
+
+  ritualLibrary.append(section);
 }
 
 function addDraftItem() {
@@ -1391,8 +1439,43 @@ function initializeSortables() {
     return;
   }
 
-  if (ritualLibrarySortable) {
-    ritualLibrarySortable.destroy();
+  ritualLibrarySortables.forEach(function destroyRitualSortable(sortableInstance) {
+    sortableInstance.destroy();
+  });
+  ritualLibrarySortables = [];
+
+  if (ritualLibrary.querySelectorAll) {
+    ritualLibrary.querySelectorAll("[data-ritual-list]").forEach(function initializeRitualListSortable(listElement) {
+      ritualLibrarySortables.push(new Sortable(listElement, {
+        animation: 180,
+        handle: ".drag-handle",
+        delay: 180,
+        delayOnTouchOnly: true,
+        touchStartThreshold: 4,
+        fallbackTolerance: 6,
+        forceFallback: true,
+        ghostClass: "sortable-ghost",
+        dragClass: "sortable-drag",
+        onEnd: function onRitualSort(event) {
+          const movedRitualId = event.item && event.item.dataset ? event.item.dataset.ritualId : "";
+          const nextIndex = event.newDraggableIndex != null ? event.newDraggableIndex : event.newIndex;
+          if (!movedRitualId || nextIndex == null) {
+            return;
+          }
+
+          state.rituals = reorderItemsWithinGroup(
+            state.rituals,
+            movedRitualId,
+            nextIndex,
+            function getRitualGroupValue(ritual) {
+              return ritual && ritual.isActive !== false ? "active" : "archived";
+            },
+          );
+          saveState();
+          renderApp();
+        },
+      }));
+    });
   }
 
   if (draftItemSortable) {
@@ -1402,27 +1485,6 @@ function initializeSortables() {
   if (plansSortable) {
     plansSortable.destroy();
   }
-
-  ritualLibrarySortable = new Sortable(ritualLibrary, {
-    animation: 180,
-    handle: ".drag-handle",
-    delay: 180,
-    delayOnTouchOnly: true,
-    touchStartThreshold: 4,
-    fallbackTolerance: 6,
-    forceFallback: true,
-    ghostClass: "sortable-ghost",
-    dragClass: "sortable-drag",
-    onEnd: function onRitualSort(event) {
-      if (event.oldIndex == null || event.newIndex == null || event.oldIndex === event.newIndex) {
-        return;
-      }
-
-      state.rituals = reorderItems(state.rituals, event.oldIndex, event.newIndex);
-      saveState();
-      renderApp();
-    },
-  });
 
   draftItemSortable = new Sortable(itemList, {
     animation: 180,
